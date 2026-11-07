@@ -1,0 +1,79 @@
+:root { --aqua: #83cfc1; --muted: #a4b3c3; }
+.ask-progress { position: sticky; top: 0; z-index: 1; background: var(--panel); padding: 9px; color: var(--aqua); }
+.ask-progress div { background: var(--grid); height: 4px; overflow: hidden; margin-top: 6px; }
+.ask-progress i { display: block; width: 38%; height: 100%; background: linear-gradient(90deg,transparent,var(--aqua)); animation: ask-sweep 1.6s ease-in-out infinite alternate; }
+@keyframes ask-sweep { to { transform: translateX(160%); } }
+@media (prefers-reduced-motion: reduce) { .ask-progress i { animation: none; } }
+.panel-switch { padding: 10px 12px 6px; gap: 6px; }
+.panel-switch button { padding: 7px 4px; background: transparent; }
+.panel-switch .on { border-color: #577d80; color: #b7e8df; background: #203334; }
+.intelligence { display: flex; flex-direction: column; padding: 0; }
+.intelligence-heading, .intelligence > .hint, .intelligence > .agent-notice { margin-inline: 14px; }
+.intelligence-heading { padding-top: 12px; }
+.intelligence-heading h2, .engine-title h2 { margin: 2px 0; font-size: 20px; letter-spacing: -.035em; font-weight: 610; }
+.eyebrow { font-size: 10px; font-weight: 650; letter-spacing: .11em; color: var(--aqua); text-transform: uppercase; }
+.intelligence-heading .agent-status { margin-top: 1px; }
+.intelligence > .hint { margin: 2px 14px 3px; }
+.intelligence-tabs { position: static; flex-wrap: nowrap; padding: 4px 10px; gap: 1px; }
+.intelligence-tabs button { background: transparent; border: none; color: var(--muted); border-bottom: 2px solid transparent; border-radius: 0; padding: 7px 2px; font-size: 12px; }
+.intelligence-tabs .on { color: #e4f5f1; background: transparent; border-bottom-color: var(--aqua); }
+.intel-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 12px 14px 18px; }
+.handoff { border: 1px solid #35494b; border-radius: 9px; padding: 14px; background: linear-gradient(125deg,#203231,var(--panel)); }
+.handoff h2 { margin: 5px 0; line-height: 1.18; font-weight: 600; font-size: clamp(17px,1.5vw,23px); }
+.handoff .hint { margin: 5px 0; }
+.trend-block { margin-top: 11px; border-top: 1px solid var(--border); padding-top: 10px; }
+.section-line, .reading > div:first-child, .trace figcaption { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.trend-block > strong { display: block; font-size: 19px; font-variant-numeric: tabular-nums; }
+.trend-block small, .reading small { color: var(--muted); font-size: 12px; font-weight: normal; }
+.trace { margin: 5px 0; }
+.trace svg { display: block; width: 100%; height: 46px; }
+.trace figcaption { font-size: 11px; color: var(--muted); }
+.brief-events { margin-top: 8px; border-top: 1px solid var(--border); }
+.time-row, .source-timeline article { display: flex; gap: 12px; padding: 5px 0; }
+.time-row time, .source-timeline time { color: var(--aqua); flex: none; font-variant-numeric: tabular-nums; }
+.case-link { width: 100%; text-align: left; margin: 7px 0 0; padding: 7px 10px; }
+.lab, .comparison { margin-top: 12px; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel2); }
+.lab form { display: flex; gap: 6px; flex-wrap: wrap; }
+.lab select { flex: 1; }
+.lab .comparison { padding: 9px 0; border: none; border-top: 1px solid var(--border); }
+.comparison table { width: 100%; border-collapse: collapse; text-align: left; font-variant-numeric: tabular-nums; }
+.comparison caption { text-align: left; color: var(--muted); padding: 6px 0; }
+.comparison :is(th,td) { padding: 5px 3px; border-bottom: 1px solid var(--border); }
+.comparison thead th { font-size: 11px; color: var(--muted); }
+.engine-title { margin: 9px 2px 12px; }
+.engine-title .eyebrow { color: #b1cafa; }
+.operator-dialog { background: var(--panel); color: var(--text); border: 1px solid #496361; border-radius: 12px; padding: 0; width: min(590px,calc(100vw - 24px)); max-height: 85dvh; box-shadow: 0 15px 60px #0008; }
+.operator-dialog::backdrop { background: #080e17be; }
+.operator-dialog section { padding: 0 18px 12px; overflow-wrap: anywhere; }
+.operator-dialog header { position: sticky; z-index: 1; top: 0; display: flex; align-items: center; justify-content: space-between; background: var(--panel); padding: 12px 0; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+.operator-dialog h2 { font-size: 18px; margin: 4px 0 10px; }
+.operator-dialog header h2 { font-size: 13px; font-weight: 550; color: var(--muted); margin: 0; }
+.operator-dialog h4 { margin: 7px 0; }
+summary { cursor: pointer; }
+.operator-dialog summary { padding: 6px 0; color: var(--muted); }
+.field-list { margin: 4px 0; }
+.field-list > div, .rank-line { display: flex; align-items: baseline; gap: 10px; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.field-list dt { color: var(--muted); }
+.field-list dd { margin: 0; text-align: right; max-width: 70%; }
+.field-list dd details { text-align: left; }
+.field-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.field-chips span { padding: 2px 6px; background: var(--panel2); border-radius: 4px; }
+.measure-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; margin: 10px 0; }
+.measure-grid > div, .reading { background: var(--panel2); padding: 10px; border-radius: 6px; }
+.measure-grid small { display: block; color: var(--muted); margin-bottom: 4px; }
+.reading { margin: 8px 0; }
+.read-track { height: 5px; background: #303d49; border-radius: 5px; overflow: hidden; margin: 6px 0 2px; }
+.read-track i { display: block; height: 100%; background: var(--aqua); border-radius: 5px; }
+.milestone { display: grid; grid-template-columns: 70px 1fr 80px; align-items: center; gap: 8px; font-size: 12px; padding: 4px 0; }
+.milestone b { text-align: right; font-variant-numeric: tabular-nums; }
+.provenance { margin-top: 14px; }
+.source-timeline article { border-top: 1px solid var(--border); font-size: 12px; }
+.source-timeline time { min-width: 44px; }
+.source-timeline small { color: var(--muted); }
+:focus-visible { outline: 2px solid var(--aqua); outline-offset: 2px; }
+@media (max-height: 675px) {
+  .intelligence-heading { padding-top: 2px; }
+  .intelligence-heading h2 { font-size: 16px; }
+  .panel-switch { padding-top: 3px; }
+  .handoff { padding: 10px; }
+}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Background, Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { api } from '../api'
@@ -112,15 +112,26 @@ function edgeFlow(env: Envelope, from: string, to: string, fromKind: string): nu
   return 0
 }
 
-export function NetworkDiagram({ env, network, onPumpDetail }: { env: Envelope; network: Network; onPumpDetail: (id: string) => void }) {
+export function NetworkDiagram({ env, network, onPumpDetail, incidentAssets = [] }: { env: Envelope; network: Network; onPumpDetail: (id: string) => void; incidentAssets?: string[] }) {
+  const container = useRef<HTMLDivElement>(null)
+  const refit = useRef<() => void>(() => {})
+  useEffect(() => {
+    let timer: number
+    const observer = new ResizeObserver(([entry]) => {
+      window.clearTimeout(timer)
+      if (entry.contentRect.width) timer = window.setTimeout(() => refit.current(), 120)
+    })
+    observer.observe(container.current!)
+    return () => { observer.disconnect(); window.clearTimeout(timer) }
+  }, [])
   const [focus, setFocus] = useState<{ id: string; related: Set<string> } | null>(null)
-  useEffect(() => { setFocus(null) }, [env.scenario.id])
 
   const kinds = useMemo(() => Object.fromEntries(network.topology.nodes.map((n) => [n.id, n.type])), [network])
   const inFocus = (id: string) => !focus || focus.id === id || focus.related.has(id)
 
   const nodes: Node<D>[] = network.topology.nodes.map((n) => ({
     id: n.id, type: n.type, draggable: false,
+    className: incidentAssets.includes(n.id) ? 'incident-node' : '',
     position: { x: n.ui.col * COL_W, y: n.ui.row * ROW_H },
     data: { node: n, env, network, dim: !inFocus(n.id), onDetails: onPumpDetail },
   }))
@@ -129,10 +140,11 @@ export function NetworkDiagram({ env, network, onPumpDetail }: { env: Envelope; 
     const flow = transfer ? 0 : edgeFlow(env, e.from, e.to, kinds[e.from])
     const live = flow > FLOW_EPS
     const dim = !(inFocus(e.from) && inFocus(e.to))
+    const affected = !transfer && incidentAssets.includes(e.from) && incidentAssets.includes(e.to)
     return {
       id: `${e.from}-${e.to}`, source: e.from, target: e.to, animated: live,
       label: transfer ? 'buffer transfer' : live ? `${flow.toFixed(0)} bbl/hr` : undefined,
-      style: { stroke: live ? 'var(--flow)' : 'var(--idle)', strokeWidth: live ? 2.5 : 1.5, strokeDasharray: live ? undefined : '5 5', opacity: dim ? 0.2 : live ? 1 : 0.6 },
+      style: { stroke: affected ? 'var(--warn)' : live ? 'var(--flow)' : 'var(--idle)', strokeWidth: affected ? 3 : live ? 2.5 : 1.5, strokeDasharray: live ? undefined : '5 5', opacity: dim ? 0.2 : live ? 1 : 0.6 },
       labelStyle: { fill: 'var(--text)', fontSize: 11 }, labelBgStyle: { fill: 'var(--panel)' },
     }
   })
@@ -143,11 +155,12 @@ export function NetworkDiagram({ env, network, onPumpDetail }: { env: Envelope; 
   }
 
   return (
-    <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.1 }}
+    <div ref={container} style={{ height: '100%', width: '100%' }}><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.1 }}
+      onInit={view => { refit.current = () => { void view.fitView({padding: 0.1}) } }}
       nodesConnectable={false} proOptions={{ hideAttribution: true }} onNodeClick={onClick} onPaneClick={() => setFocus(null)}
       minZoom={0.3} colorMode="dark" zoomOnDoubleClick={false}
       onNodeDoubleClick={(_, n) => { if (n.type === 'pump') onPumpDetail(n.id) }}>
       <Background gap={24} />
-    </ReactFlow>
+    </ReactFlow></div>
   )
 }

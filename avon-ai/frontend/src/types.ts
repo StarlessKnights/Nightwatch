@@ -21,6 +21,8 @@ export interface SimEvent {
 }
 
 export interface SimStateDto {
+  run_id: string
+  revision: number
   t_min: number
   clock: string
   tanks: Record<string, Json>

@@ -12,10 +12,15 @@ from . import faults, messages
 from .models import AssetPatch, EngineRequest, FaultRequest, SpeedRequest
 from .scenarios import list_scenarios
 from .session import Session
+from .agent.orchestrator import Agent
+from .agent.proposals import ChatRequest, DecisionRequest, NoteRequest, ScenarioProposal, ToggleRequest
+from .agent.tools import Context
+from .agent.history import signals
 
 TICK_REAL_S = 0.1
 
 session = Session()
+agent = Agent(session)
 clients: set[WebSocket] = set()
 
 
@@ -53,8 +58,14 @@ async def sim_loop() -> None:
 @contextlib.asynccontextmanager
 async def lifespan(_: FastAPI):
     task = asyncio.create_task(sim_loop())
-    yield
-    task.cancel()
+    agent.start()
+    try:
+        yield
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        await agent.close()
 
 
 app = FastAPI(title="AVON AI", lifespan=lifespan)
@@ -245,3 +256,77 @@ async def ws_sim(ws: WebSocket):
         pass
     finally:
         clients.discard(ws)
+
+
+@app.get("/api/agent")
+async def agent_state():
+    return agent.snapshot()
+
+
+@app.post("/api/agent/enabled")
+async def agent_enabled(req: ToggleRequest):
+    agent.enabled = req.enabled
+    if not req.enabled:
+        for task in (agent.chat_task, agent.model_task):
+            if task and not task.done():
+                task.cancel()
+    agent.signature = None
+    agent.audit.record(session.run_id, "operator_agent_toggle", {"enabled": req.enabled})
+    agent.wake.set()
+    return agent.snapshot()
+
+
+@app.post("/api/agent/chat", status_code=202)
+async def agent_chat(req: ChatRequest):
+    try:
+        return agent.submit_chat(req.message)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+
+
+@app.post("/api/agent/proposals/{proposal_id}/{decision_name}")
+async def agent_decision(proposal_id: str, decision_name: str, req: DecisionRequest):
+    if decision_name not in ("approve", "reject"):
+        raise HTTPException(404, "Unknown decision")
+    try:
+        result = await agent.decide(proposal_id, decision_name == "approve", req.run_id)
+    except KeyError:
+        raise HTTPException(404, "Unknown proposal")
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(409, str(exc))
+    await broadcast()
+    return result
+
+
+@app.post("/api/agent/scenarios")
+async def agent_scenario(req: ScenarioProposal):
+    if not agent.enabled:
+        raise HTTPException(409, "Agent disabled")
+    if agent.lock.locked():
+        raise HTTPException(409, "An operator analysis is in progress")
+    async with agent.lock:
+        ctx = Context(session, agent.audit)
+        try:
+            result = await asyncio.to_thread(ctx.execute, "submit_scenario_proposal", req.model_dump())
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        if not agent.publish_context(ctx):
+            raise HTTPException(409, "Scenario changed during analysis")
+        return result
+
+
+@app.get("/api/agent/history")
+async def agent_history():
+    return await asyncio.to_thread(signals, agent.audit)
+
+
+@app.post("/api/agent/notes")
+async def agent_note(req: NoteRequest):
+    if req.asset_id not in session.topo.nodes:
+        raise HTTPException(422, "Unknown asset")
+    identity = agent.audit.record(session.run_id, "note", {**req.model_dump(), "t_min": session.state.t_min,
+                                                         "provenance": "Operator-entered synthetic maintenance observation"})
+    if agent.audit.error:
+        raise HTTPException(503, "Note could not be stored")
+    agent.record_activity("Maintenance note saved", req.asset_id)
+    return {"id": identity}

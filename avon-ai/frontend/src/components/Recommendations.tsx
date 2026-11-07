@@ -29,6 +29,7 @@ export function Recommendations({ env, rec, selectedId, onSelect, run, disclaime
 
   return (
     <div className="panel-fill scroll">
+      <div className="engine-title"><span className="eyebrow">ACTION RANKING</span><h2>Decision Engine</h2><p className="hint">Compare feasible actions by simulated cost and time available. Approvals apply to this run.</p></div>
       <div className={`headline st-${rec.status}`}>
         <span className="chip">{rec.status.toUpperCase()}</span>
         <span>{rec.headline}</span>

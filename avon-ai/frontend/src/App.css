@@ -115,3 +115,53 @@ h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .06e
 .pump .info { position: absolute; top: -8px; right: -10px; width: 18px; height: 18px; padding: 0; border-radius: 50%; font-size: 11px; line-height: 1; }
 .ledger { display: flex; gap: 12px; font-weight: 600; font-variant-numeric: tabular-nums; padding: 2px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel2); }
 .ledger .loss { color: var(--crit); } .ledger .save { color: var(--ok); }
+
+/* Intelligence extends the existing operator console. */
+.right.with-intelligence { width: 460px; }
+.right-top { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.right-top > .panel-fill, .right-top > .intelligence { flex: 1; min-height: 0; }
+.panel-switch, .intelligence-tabs { display: flex; gap: 4px; padding: 6px; background: var(--panel); }
+.panel-switch button { flex: 1; }
+.panel-switch .on, .intelligence-tabs .on { background: #1f5f99; border-color: var(--flow); }
+.intelligence { position: relative; }
+.intelligence-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 6px; }
+.agent-status { display: inline-flex; align-items: center; gap: 6px; margin-top: 7px; font-size: 12px; color: var(--muted); }
+.agent-status::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--idle); }
+.agent-status.online::before { background: var(--ok); box-shadow: 0 0 8px #3fbf7f55; }
+.intelligence-tabs { padding: 8px 0; position: sticky; top: -6px; z-index: 3; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+.intelligence-tabs button { font-size: 11px; flex: 1; }
+.agent-notice { padding: 8px 10px; background: #1d3041; border: 1px solid #345777; border-radius: 5px; font-size: 12px; }
+.agent-notice.warn { background: #392a19; border-color: #84612a; }
+.agent-empty { padding: 30px 12px; color: var(--text); text-align: center; }
+.incident { border: 1px solid var(--border); border-left: 3px solid var(--watch); border-radius: 6px; padding: 10px; margin: 10px 0; background: var(--panel2); overflow-wrap: anywhere; }
+.incident.st-warning { border-left-color: var(--warn); }
+.incident.st-critical { border-left-color: var(--crit); }
+.incident.resolved { border-left-color: var(--ok); opacity: .75; }
+.intelligence h4 { margin: 7px 0; font-size: 13px; }
+.intelligence p { margin: 7px 0; }
+.link-inline { color: var(--flow); border: none; padding: 0; background: none; font-size: 12px; }
+.auto-response { border-left: 2px solid var(--ok); padding-left: 8px; font-size: 12px; }
+.evidence-links { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+.evidence-links button { color: #a3c6e6; border: 1px solid #38536b; background: #172636; font-size: 10px; padding: 2px 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evidence-links button::before { content: '↗ '; }
+.interpretation { font-size: 12px; margin: 8px 0; }
+.intelligence summary { cursor: pointer; color: var(--muted); padding: 5px 0; font-size: 12px; }
+.agent-metrics { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; font-weight: 600; }
+.agent-metrics small { display: block; color: var(--muted); font-weight: 400; margin-bottom: 4px; }
+.agent-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.agent-message { padding: 10px; border-radius: 6px; background: var(--panel2); margin: 10px 0; overflow-wrap: anywhere; }
+.agent-message.operator { background: #1b3048; margin-left: 24px; }
+.suggested-questions { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+.suggested-questions button { text-align: left; font-size: 11px; color: var(--muted); }
+.agent-chat { display: flex; flex-direction: column; gap: 7px; padding: 10px 0; }
+.agent-chat label { font-size: 12px; color: var(--muted); }
+.agent-chat textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 8px; resize: vertical; min-height: 65px; }
+.agent-chat button { align-self: flex-end; }
+.agent-activity { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.agent-activity > .hint { min-width: 45px; }
+.evidence-overlay { position: fixed; inset: 0; background: #0009; z-index: 100; display: grid; place-items: center; padding: 24px; }
+.evidence-viewer { width: min(720px, 95vw); max-height: 85vh; overflow: auto; background: var(--panel); border: 1px solid var(--flow); border-radius: 10px; padding: 18px; box-shadow: 0 18px 80px #0009; }
+.intelligence pre { font-size: 11px; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border-radius: 5px; }
+.react-flow__node.incident-node { filter: drop-shadow(0 0 6px #f0b42980); }
+@media (max-width: 1100px) { .right.with-intelligence { width: 380px; } .drawer { width: 220px; } }
+@media (prefers-reduced-motion: reduce) { .alarm.unack, .pump.starting { animation: none; } }
