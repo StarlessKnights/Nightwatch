@@ -18,6 +18,14 @@ pio device monitor -b 115200 --port <PORT>
 
 The `corners` environment is a physical orientation check. It lights top-left, top-right, bottom-right, bottom-left in sequence. The default logical origin is top-left. Confirm this on all three boards after mounting.
 
+For a single state to remain live during visual inspection, use the fixture sender's hold mode:
+
+```sh
+/Users/manast/.platformio/penv/bin/python tools/send_fixture.py <PORT> --device 1 --packet-index 0 --hold
+```
+
+Stop it with Ctrl-C. A one-shot packet intentionally falls back to the broken-link pattern after 1.5 seconds.
+
 ## USB identification and protocol
 
 At boot each board prints `AVON|HELLO|...` with its compiled device ID. Gateway software should discover boards from this identity line, not by assuming USB port order. Protocol details and fixture packets are in `protocol/serial_protocol.md` and `protocol/examples.ndjson`.

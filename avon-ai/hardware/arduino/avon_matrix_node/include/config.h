@@ -8,6 +8,14 @@
 #define CORNER_TEST 0
 #endif
 
+#ifndef MINIMAL_TEST
+#define MINIMAL_TEST 0
+#endif
+
+#ifndef API_TEST
+#define API_TEST 0
+#endif
+
 #if DEVICE_ID < 1 || DEVICE_ID > 3
 #error DEVICE_ID must be 1, 2, or 3
 #endif

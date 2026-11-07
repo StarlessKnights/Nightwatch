@@ -1,4 +1,5 @@
 #include "profiles.h"
+#include "config.h"
 
 static void pumpIcon(Framebuffer &f,int x,PumpState p,uint8_t phase,bool blink){
   if(p==PUMP_STOPPED){f.hline(x+1,x+2,4);return;}
@@ -12,13 +13,52 @@ static void pumpIcon(Framebuffer &f,int x,PumpState p,uint8_t phase,bool blink){
 }
 
 static void tank(const DisplayState&s,Framebuffer&f,unsigned long now,uint8_t phase){
-  f.vline(0,0,7);f.vline(3,0,7);f.hline(0,3,7);
-  int fill=(int)((uint32_t)s.level*8/s.capacity);for(int row=0;row<fill;row++)f.hline(1,2,6-row);
-  bool hh=s.level>=s.highHigh||s.alarm==3;bool h=s.level>=s.high||s.alarm==2;
-  if(hh){if((now/100)%2==0){for(int y=0;y<8;y++)f.set(1,y);f.set(2,0);f.set(2,1);f.set(2,3);f.set(2,4);f.set(2,6);}}
-  else if(h&&((now/250)%2==0))f.hline(1,2,0);
-  if(s.interlock)f.hline(0,3,1);
-  pumpIcon(f,4,s.pump1,phase,phase%2==0);pumpIcon(f,8,s.pump2,phase,phase%2==0);
+  // Device 1 is a full-width liquid level display. The lit body rises
+  // from the bottom, while the top row of liquid travels as a wave.
+  float fraction = s.capacity == 0 ? 0.0f : (float)s.level / (float)s.capacity;
+  fraction = constrain(fraction, 0.0f, 1.0f);
+  int fillRows = (int)(fraction * 8.0f + 0.5f);
+  if (fillRows <= 0) return;
+
+  int surface = 8 - fillRows;
+  for (int y = surface + 1; y < 8; ++y) {
+    // Slowly moving vertical shimmer keeps the body from looking static.
+    for (int x = 0; x < 12; ++x) {
+      bool shimmer = ((x + phase + y * 2) % 11) != 0;
+      f.set(x, y, shimmer);
+    }
+  }
+
+  // Animated surface crest. Adjacent lit cells form a wave that shifts
+  // left-to-right rather than blinking the whole level at once.
+  for (int x = 0; x < 12; ++x) {
+    int crest = (x + phase) % 6;
+    f.set(x, surface, crest != 0 && crest != 5);
+  }
+
+  // Two small droplets periodically break above the surface.
+  if (surface > 0) {
+    int drop = (phase / 2) % 12;
+    f.set(drop, surface - 1, true);
+    if ((phase % 8) == 0) f.set((drop + 5) % 12, surface - 1, true);
+  }
+
+  // Critical states alternate between the liquid level and a large warning
+  // triangle so the alarm remains unmistakable on a monochrome 12x8 display.
+  bool critical = s.level >= s.highHigh || s.alarm == 3;
+  if (critical && ((now / 400) % 2 == 0)) {
+    f.clear();
+    f.set(6, 0);
+    f.set(5, 1); f.set(7, 1);
+    f.set(4, 2); f.set(8, 2);
+    f.set(3, 3); f.set(9, 3);
+    f.set(2, 4); f.set(10, 4);
+    f.set(1, 5); f.set(11, 5);
+    f.hline(0, 11, 6);
+    // Exclamation mark: two lit pixels, one dark gap, then a dot.
+    f.set(6, 2); f.set(6, 3);
+    f.set(6, 5);
+  }
 }
 
 static void pipeline(const DisplayState&s,Framebuffer&f,uint8_t phase,unsigned long now){
