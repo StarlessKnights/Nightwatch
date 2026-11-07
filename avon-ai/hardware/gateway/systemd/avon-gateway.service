@@ -1,0 +1,17 @@
+[Unit]
+Description=AVON AI Hardware Gateway & Bridge Daemon
+After=network.target network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/AvonAI-SecondPass/avon-ai
+ExecStart=/usr/bin/python3 hardware/gateway/bridge.py --config hardware/gateway/config.json
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

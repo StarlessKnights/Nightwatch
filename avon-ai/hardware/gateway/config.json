@@ -1,0 +1,43 @@
+{
+  "backend": {
+    "ws_url": "ws://127.0.0.1:8000/ws/sim",
+    "api_url": "http://127.0.0.1:8000",
+    "reconnect_interval_s": 2.0
+  },
+  "serial": {
+    "baud_rate": 115200,
+    "timeout_s": 0.5,
+    "auto_detect": true,
+    "ports": {
+      "device1": "/dev/ttyACM0",
+      "device2": "/dev/ttyACM1",
+      "device3": "/dev/ttyACM2"
+    },
+    "windows_ports": {
+      "device1": "COM3",
+      "device2": "COM4",
+      "device3": "COM5"
+    }
+  },
+  "gpio": {
+    "enabled": true,
+    "pins": {
+      "trip_switch_p203": 17,
+      "degrade_switch_p203": 27,
+      "approve_button": 22,
+      "reset_button": 23,
+      "led_normal_green": 24,
+      "led_advisory_yellow": 25,
+      "led_alarm_red": 8
+    },
+    "debounce_time_s": 0.15
+  },
+  "telemetry": {
+    "tank_id": "T-104",
+    "duty_pump_id": "P-203",
+    "standby_pump_id": "P-204",
+    "pipeline_id": "PL-1",
+    "treatment_id": "TRT-1",
+    "source_id": "SRC-1"
+  }
+}

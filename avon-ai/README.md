@@ -19,6 +19,14 @@ cd backend && .venv/bin/python -m pytest         # 27 tests
 5. **Safety interlock** – `interlock.py` shuts in inflow at HH and trips pumps at LL. It imports no decision/forecast/actions code (test enforces it; scene 6 runs with the engine off).
 6. **Mitigation** – overflow is tracked as the worst outcome in `consequence.py`.
 
+## Hardware & Edge Integration
+See [hardware/README.md](hardware/README.md) for full setup instructions:
+- **Raspberry Pi 5**: Runs `hardware/gateway/bridge.py` (WebSocket to 3x USB Serial) and `hardware/gateway/gpio_controller.py` (physical switches, e-stop, and approve pushbutton).
+- **Raspberry Pi 3**: Runs `hardware/kiosk/kiosk.sh` (Chromium fullscreen kiosk display optimized for 1GB RAM).
+- **3x Arduino UNO R4 WiFi**: PlatformIO firmware in `hardware/firmware/` driving 12x8 LED matrices for live waterflow animations, tank levels, and treatment intake.
+- **Protocol & Animation Specs**: Detailed packet definitions for Person B in [hardware/PROTOCOL.md](hardware/PROTOCOL.md).
+- **Test Feeder**: Person B can test LED matrix animations without the backend using `python hardware/tools/test_feeder.py --interactive`.
+
 ## Notes / deviations from SPEC
 - `SimState.event_log` is replaced by `new_events` (events of the last tick); the session accumulates the log.
 - Extra modules: `state.py` (snapshot dataclasses), `session.py` (stateful wrapper), `scenarios.py`, `messages.py` (the only place prose lives).
