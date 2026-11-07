@@ -1,12 +1,14 @@
 {
   "backend": {
-    "ws_url": "ws://127.0.0.1:8000/ws/sim",
-    "api_url": "http://127.0.0.1:8000",
+    "ws_url": "ws://127.0.0.1:8080/ws/sim",
+    "api_url": "http://127.0.0.1:8080",
     "reconnect_interval_s": 2.0
   },
   "serial": {
+    "protocol_version": 1,
     "baud_rate": 115200,
-    "timeout_s": 0.5,
+    "timeout_s": 0.05,
+    "reconnect_cooldown_s": 3.0,
     "auto_detect": true,
     "windows_ports": {
       "device1": "COM3",

@@ -20,16 +20,17 @@ cd backend && .venv/bin/python -m pytest         # 27 tests
 6. **Mitigation** – overflow is tracked as the worst outcome in `consequence.py`.
 
 ## Hardware Integration (5-Node Visualizer Network)
-See [hardware/README.md](hardware/README.md) for full setup instructions:
-- **Host Computer**: Runs the simulation backend, web dashboard kiosk, `hardware/gateway/bridge.py` (WebSocket to 5x USB Serial), and `hardware/gateway/control_deck.py` (operator controls).
-- **5x Arduino UNO R4 WiFi**: PlatformIO firmware in `hardware/firmware/` driving 12x8 LED matrices across the plant topology:
+See [hardware_gateway/README.md](hardware_gateway/README.md) for full setup instructions:
+- **Host Computer**: Runs the simulation backend, web dashboard kiosk, `hardware_gateway/bridge.py` (WebSocket to 5x USB Serial), and `hardware_gateway/control_deck.py` (operator controls).
+- **Physical Fault Tolerance**: Built-in hot-plug and disconnect resilience in `bridge.py` ensures that if any Arduino is unplugged or fails, the rest of the network and simulation continues completely uninterrupted.
+- **5x Arduino UNO R4 WiFi**: PlatformIO firmware driving 12x8 LED matrices across the plant topology:
   1. Tank T-104 & P-203/P-204
   2. Pipeline PL-1 (Upper dynamic waterflow)
   3. Treatment Facility TRT-1 (Intake vortex & backpressure)
   4. Tank T-101 & P-201
   5. Pipeline PL-2 (Lower dynamic waterflow)
-- **Protocol & Animation Specs**: Detailed packet definitions for Person B in [hardware/PROTOCOL.md](hardware/PROTOCOL.md).
-- **Test Feeder**: Test any Arduino matrix animation standalone with `python hardware/tools/test_feeder.py --interactive`.
+- **Protocol & Animation Specs**: Detailed packet definitions in [hardware_gateway/PROTOCOL.md](hardware_gateway/PROTOCOL.md).
+- **Test Feeder**: Test any Arduino matrix animation standalone with `py hardware_gateway/tools/test_feeder.py --interactive`.
 
 ## Notes / deviations from SPEC
 - `SimState.event_log` is replaced by `new_events` (events of the last tick); the session accumulates the log.
