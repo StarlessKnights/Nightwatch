@@ -4,9 +4,9 @@ from __future__ import annotations
 from dataclasses import replace
 
 from . import actions as act
-from . import consequence, faults, messages
+from . import consequence, diagnosis, faults, messages
 from .forecast import Trajectory, first_crossing, rollout, tank_forecasts
-from .models import (Affected, Cause, Config, CostBreakdown, Option, Reason, Recommendation)
+from .models import (Affected, Cause, Config, CostBreakdown, Diagnosis, Option, Reason, Recommendation)
 from .network import Topology, impact
 from .state import SimState
 
@@ -37,19 +37,32 @@ def _r(x):
     return None if x is None else round(x, 2)
 
 
-def probable_cause(state: SimState, eff, topo: Topology, cfg: Config) -> list[Cause]:
-    """Templated from effective readings, not prose."""
+def pump_diagnoses(state: SimState, eff, topo: Topology, cfg: Config) -> dict:
+    out = {}
+    for p, ps in state.pumps.items():
+        if ps.run_state != "RUNNING" or not eff.pump_available[p]:
+            continue
+        d = diagnosis.diagnose_instant(eff.pump_w[p], 1.0, eff.pipeline_r[topo.pumps[p].pipeline], cfg)
+        out[p] = Diagnosis(**d)
+    return out
+
+
+def probable_cause(state: SimState, eff, topo: Topology, cfg: Config, diag: dict) -> list[Cause]:
+    """Evidence fields from the pump diagnosis (w_est / r_est) and effective readings, not prose."""
     out = []
     for p, ps in state.pumps.items():
         if ps.run_state == "TRIPPED":
             out.append(Cause(asset=p, evidence_field="run_state", value="TRIPPED"))
         if not eff.pump_available[p]:
             out.append(Cause(asset=p, evidence_field="available", value=False))
-        if ps.run_state in ("RUNNING", "STARTING") and eff.pump_cf[p] < 1.0:
-            out.append(Cause(asset=p, evidence_field="capacity_factor", value=round(eff.pump_cf[p], 2)))
-    for p, v in eff.pipeline_rf.items():
-        if v < 1.0:
-            out.append(Cause(asset=p, evidence_field="restriction_factor", value=round(v, 2)))
+        d = diag.get(p)
+        if d and d.code not in ("NONE", "FLOW_TOO_LOW"):
+            out.append(Cause(asset=p, evidence_field="diagnosis", value=d.code))
+            if d.code in ("PUMP_WEAR", "COMPOUND"):
+                out.append(Cause(asset=p, evidence_field="w_est", value=d.w_est))
+    for pl, v in eff.pipeline_r.items():
+        if v > 1.0:
+            out.append(Cause(asset=pl, evidence_field="restriction_r", value=round(v, 2)))
     for p, v in eff.treatment_if.items():
         if v < 1.0:
             out.append(Cause(asset=p, evidence_field="intake_factor", value=round(v, 2)))
@@ -69,8 +82,7 @@ def recommend(state: SimState, topo: Topology, cfg: Config, unavailable_override
     if unavailable_overrides:
         state = replace(state, pumps={p: (replace(s, available=False) if p in unavailable_overrides else s)
                                       for p, s in state.pumps.items()})
-    eff = faults.effective(state, topo)
-    dt_h = cfg.time.dt_min / 60
+    eff = faults.effective(state, topo, cfg)
     t0 = state.t_min
     horizon = cfg.time.horizon_min
     buffer = cfg.decision.operator_approval_buffer_min
@@ -85,7 +97,8 @@ def recommend(state: SimState, topo: Topology, cfg: Config, unavailable_override
     base_breach = any(base.trips.values()) or any(base.overflow_events.values())
 
     at_risk = {t for t, f in fc.items() if f.status != "normal"}
-    cause = probable_cause(state, eff, topo, cfg)
+    diag = pump_diagnoses(state, eff, topo, cfg)
+    cause = probable_cause(state, eff, topo, cfg, diag)
     faulted = [c.asset for c in cause]
     up, down = [], []
     for a in faulted:
@@ -118,7 +131,7 @@ def recommend(state: SimState, topo: Topology, cfg: Config, unavailable_override
         codes: list[str] = []
         extra_trucks = 0
         for a in combo:
-            codes += act.preconditions(a, state, eff, topo, cfg, dt_h, extra_trucks)
+            codes += act.preconditions(a, state, eff, topo, cfg, extra_trucks)
             if a.kind == act.DISPATCH_TRUCK:
                 extra_trucks += 1
         deadlines = []
@@ -215,7 +228,7 @@ def recommend(state: SimState, topo: Topology, cfg: Config, unavailable_override
             hl_code, hl = "REACHES_HH", messages.headline("REACHES_HH", tank=tank, minutes=round(tth, 1), act_by=best.act_by_clock)
 
     return Recommendation(
-        as_of_min=t0, headline=hl, headline_code=hl_code, status=status, forecast=fc, probable_cause=cause,
+        as_of_min=t0, headline=hl, headline_code=hl_code, status=status, forecast=fc, probable_cause=cause, diagnosis=diag,
         affected_assets=Affected(upstream=up, downstream=down, first_to_limit=first), options=ordered,
         ranked_option_ids=ranked, best_option_id=best_id, do_nothing_cost=do_nothing_cost, savings=savings,
         engine_enabled=engine_enabled)

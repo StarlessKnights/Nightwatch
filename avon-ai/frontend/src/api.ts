@@ -1,4 +1,4 @@
-import type { Json, Network, Recommendation } from './types'
+import type { AssetHistory, Curves, Json, Network, PumpDiagnosis, Recommendation } from './types'
 
 async function call<T = Json>(method: string, url: string, body?: unknown): Promise<T> {
   const r = await fetch(url, {
@@ -25,5 +25,8 @@ export const api = {
   approve: (optionId: string) => call('POST', `/api/recommendation/${encodeURIComponent(optionId)}/approve`),
   ack: (id: string) => call('POST', `/api/alarms/${encodeURIComponent(id)}/ack`),
   patchConfig: (patch: Json) => call('PATCH', '/api/config', patch),
+  assetHistory: (id: string, windowMin: number) => call<AssetHistory>('GET', `/api/assets/${id}/history?window_min=${windowMin}`),
+  assetCurves: (id: string) => call<Curves>('GET', `/api/assets/${id}/curves`),
+  assetDiagnosis: (id: string) => call<PumpDiagnosis>('GET', `/api/assets/${id}/diagnosis`),
   impact: (id: string) => call<{ upstream: string[]; downstream: string[]; first_to_limit: string | null }>('GET', `/api/impact/${id}`),
 }

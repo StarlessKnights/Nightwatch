@@ -32,7 +32,7 @@ class TankState:
 class PumpState:
     role: str  # duty | standby
     run_state: str
-    capacity_factor: float  # base factor; faults are layered on top (see faults.effective)
+    health: float  # base pump health w (1 = new); faults are layered on top (see faults.effective)
     available: bool
     start_ready_at_min: Optional[int] = None
     auto_started: bool = False
@@ -51,7 +51,7 @@ class SourceState:
 @dataclass(frozen=True)
 class PipelineState:
     max_flow: float
-    restriction_factor: float = 1.0
+    r: float = 1.0  # restriction (1 = clear, higher = blocked)
 
 
 @dataclass(frozen=True)

@@ -74,3 +74,21 @@ export interface Network {
   fault_catalog: Record<string, { target_kind: string; handled_by: string; params: Record<string, Json> }>
   scenarios: { id: string; name: string; description: string; decision_engine_enabled: boolean }[]
 }
+
+export interface PumpDiagnosis { code: string; w_est: number | null; r_est: number | null; evidence: { field: string; value: number }[]; text?: string }
+
+export interface AssetHistory {
+  kind: 'pump' | 'tank'
+  series: Record<string, (number | null)[]>
+  events: { t: number; kind: string; label: string }[]
+  expected_flow: number[]
+}
+
+export interface CurvePoint { Q: number; H: number }
+export interface Curves {
+  pump_curve: CurvePoint[]; pump_curve_healthy: CurvePoint[]
+  system_curve: CurvePoint[]; system_curve_healthy: CurvePoint[]
+  operating_point: { Q: number; H: number }
+  healthy_point: { Q: number; H: number }
+  running: boolean; w: number; r: number
+}

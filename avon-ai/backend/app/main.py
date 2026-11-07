@@ -156,11 +156,35 @@ async def delete_fault(fault_id: str):
 @app.patch("/api/assets/{asset_id}")
 async def patch_asset(asset_id: str, req: AssetPatch):
     try:
-        session.patch_asset(asset_id, req.capacity_factor, req.available)
+        session.patch_asset(asset_id, req.health if req.health is not None else req.capacity_factor, req.available)
     except KeyError:
         raise HTTPException(404, "unknown pump")
     await broadcast()
     return {"ok": True}
+
+
+@app.get("/api/assets/{asset_id}/history")
+def asset_history(asset_id: str, window_min: int = 240):
+    try:
+        return session.asset_history(asset_id, window_min)
+    except KeyError:
+        raise HTTPException(404, "unknown asset")
+
+
+@app.get("/api/assets/{asset_id}/curves")
+def asset_curves(asset_id: str):
+    try:
+        return session.asset_curves(asset_id)
+    except KeyError:
+        raise HTTPException(404, "unknown pump")
+
+
+@app.get("/api/assets/{asset_id}/diagnosis")
+def asset_diagnosis(asset_id: str):
+    try:
+        return session.diagnosis(asset_id)
+    except KeyError:
+        raise HTTPException(404, "unknown pump")
 
 
 @app.get("/api/recommendation")

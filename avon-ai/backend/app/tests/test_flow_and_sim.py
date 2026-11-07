@@ -2,6 +2,7 @@ import pytest
 from dataclasses import replace
 
 from app import flow
+from app.models import load_config
 from app.forecast import closed_form_time_to_limit, rollout, tank_forecasts
 from app.sim import initial_state, step
 from app.state import RUNNING, STOPPED, TRIPPED
@@ -10,8 +11,9 @@ from .conftest import fault, run
 
 def alloc(topo, **kw):
     base = dict(
-        volumes={t: 500 for t in topo.tanks}, pump_on={p: False for p in topo.pumps}, pump_cf={p: 1.0 for p in topo.pumps},
-        pipeline_cap={"PL-1": 250, "PL-2": 250}, treatment_cap={"TRT-1": 400},
+        volumes={t: 500 for t in topo.tanks}, pump_on={p: False for p in topo.pumps}, pump_w={p: 1.0 for p in topo.pumps},
+        pump_model_cfg=load_config().pump_model, pipeline_cap={"PL-1": 250, "PL-2": 250}, pipeline_r={"PL-1": 1.0, "PL-2": 1.0},
+        treatment_cap={"TRT-1": 400},
         source_rate={s: 0 for s in topo.sources}, dt_h=1 / 60)
     base.update(kw)
     return flow.allocate(topo, **base)
@@ -32,9 +34,9 @@ def test_unavailable_pump_zero_flow(topo, scene):
 
 def test_treatment_constraint_scales_pipelines_proportionally(topo):
     r = alloc(topo, pump_on={"P-203": True, "P-201": True, "P-204": False}, treatment_cap={"TRT-1": 200})
-    assert r.pipeline_flow["PL-1"] == pytest.approx(100) and r.pipeline_flow["PL-2"] == pytest.approx(100)
+    assert r.pipeline_flow["PL-1"] == pytest.approx(100, rel=1e-3) and r.pipeline_flow["PL-2"] == pytest.approx(100, rel=1e-3)
     r = alloc(topo, pump_on={"P-203": True, "P-204": True, "P-201": True}, treatment_cap={"TRT-1": 200})
-    assert r.pipeline_flow["PL-1"] / r.pipeline_flow["PL-2"] == pytest.approx(250 / 200)  # proportional to demand
+    assert r.pipeline_flow["PL-1"] / r.pipeline_flow["PL-2"] == pytest.approx(250 / 200, rel=1e-3)  # proportional to demand
     assert r.treatment_flow["TRT-1"] == pytest.approx(200)
 
 
