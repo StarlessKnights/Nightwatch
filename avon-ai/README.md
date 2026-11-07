@@ -31,11 +31,13 @@ cd backend && .venv/bin/python -m pytest         # 27 tests
 
 ## AVON Intelligence / Nemotron
 
-The Intelligence panel monitors equipment, faults, alarms and forecast changes automatically. It groups related incidents, links their simulator evidence, highlights affected graph nodes, reviews recommendations, validates alternative proposals, and supports natural-language questions and isolated what-if simulations. The decision-engine tab retains the original ranking.
+Open **AVON Intelligence → Brief** for shift handoff: the last 30 simulated minutes of measured tank volumes, recent changes, alarms needing acknowledgment, and the next forecast high-high crossing. Forecasts show the simulation minute they were calculated. **What-if lab** compares a hypothetical disruption to unchanged conditions at the same minute, showing time to high-high and modeled do-nothing cost. Neither forecast changes playback. In **Ask**, try “What changed this shift?” or investigate an incident with Nemotron. Evidence opens as recorded readings, charts and comparisons; historical source events retain their run and record IDs.
+
+Use **Decision Engine** to rank, inspect and approve feasible actions. Intelligence investigates changes and can propose alternatives for validation; it does not copy the engine’s top action into its proposal queue. The alarm strip above both views shows the highest-priority active alarm and opens the acknowledgment desk.
 
 Copy `backend/.env.example` to `backend/.env` and set `NVIDIA_API_KEY` to connect Nemotron. Start the backend normally; it loads that file automatically. Keys stay on the backend. Model IDs and the OpenAI-compatible base URL are configurable. The defaults use Nemotron 3.5 Lightning and Nemotron 3.5 Super VL; the selected endpoint must support tool calling and JSON output. A real inference call requires a valid provider key and model access.
 
-Without a key, deterministic incident monitoring, evidence, decision-engine proposals, history, and supported scenario questions remain available. Set `AVON_AGENT_ENABLED=false` to disable the intelligence layer completely, or toggle it in the panel. Playback and safety protection remain independent.
+Without a key, shift handoff, deterministic monitoring, evidence, history, the what-if lab and supported scenario questions remain available. Set `AVON_AGENT_ENABLED=false` to disable the intelligence layer completely, or toggle it in the panel. Playback and safety protection remain independent.
 
 Try scene 2 for pump degradation, scene 3 for standby unavailability, scene 4 for automatic changeover, and scene 5 for correlated treatment restrictions. In Ask, try “Why is T-104 filling up?”, “What happens if P-204 becomes unavailable?”, or “What happens if treatment capacity drops by 50%?”. Without Nemotron, only those limited scenario patterns are parsed; broader reasoning requires the configured model.
 

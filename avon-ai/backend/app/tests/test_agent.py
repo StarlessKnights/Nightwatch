@@ -105,7 +105,7 @@ def test_monitor_deduplicates_and_resets(agent_setup):
         identity = agent.incidents[0]["id"]
         await agent.analyze_observation(Context(session, agent.audit), groups, signature)
         assert len(agent.incidents) == 1 and agent.incidents[0]["id"] == identity
-        assert len(agent.proposals) == 1
+        assert not agent.proposals  # The engine's ranked action is not a second Intelligence proposal.
         old_run = session.run_id
         session.reset()
         agent.reset_run()
@@ -187,13 +187,55 @@ def test_gateway_fails_closed(agent_setup, mode):
     assert "secret-test" not in gateway.last_error
 
 
+def test_gateway_repairs_quantities_but_accepts_cited_equipment_tag(agent_setup):
+    session, agent = agent_setup
+    ctx = Context(session, agent.audit)
+    seed = ctx.asset("P-203")
+    calls = []
+    def handler(request):
+        calls.append(json.loads(request.content))
+        prose = "P-203 lost 99 bbl." if len(calls) == 1 else "Check whether P-203 output recovers."
+        answer = {"evidence_ids": [seed["id"]], "interpretations": [{"text": prose, "evidence_ids": [seed["id"]]}]}
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(answer)}}]})
+    gateway = Gateway(Settings(api_key="test"), agent.audit, httpx.MockTransport(handler))
+    answer = asyncio.run(gateway.analyze(ctx, "What changed?", seed))
+    assert answer.interpretations[0].text == "Check whether P-203 output recovers."
+    assert len(calls) == 2 and "tools" not in calls[1] and calls[1]["response_format"]["type"] == "json_object"
+
+
 def test_fallback_chat_simulates_without_mutation(agent_setup):
     session, agent = agent_setup
     before = session.state
     ctx = Context(session, agent.audit)
     answer = asyncio.run(agent.fallback_chat(ctx, "What happens if treatment capacity drops by 50%?", None))
     assert answer.evidence_ids and ctx.scenarios[0]["faults"][0]["params"]["factor"] == .5
+    result = ctx.scenarios[0]
+    reference = decision.recommend(before, ctx.topo, ctx.cfg, engine_enabled=False)
+    assert result["baseline"]["do_nothing_cost"] == reference.do_nothing_cost
+    assert {t: f["time_to_HH"] for t, f in result["baseline"]["forecast"].items()} == {
+        t: f.time_to_HH for t, f in reference.forecast.items()}
+    assert {"T-104", "T-101"} <= result["forecast"].keys()
     assert session.state is before
+
+
+def test_shift_brief_uses_only_observed_window_and_current_run(agent_setup):
+    session, agent = agent_setup
+    session.advance(36)
+    ctx = Context(session, agent.audit)
+    fact = ctx.execute("get_shift_brief", {})
+    brief = fact["value"]
+    assert fact["run_id"] == session.run_id and brief["from_min"] == 6
+    for row in brief["trends"]:
+        assert len(row["samples"]) == 31 and row["samples"][-1]["t"] == 36
+        assert row["change_bbl"] == round(session.history[-1][row["tank"]] - session.history[-31][row["tank"]], 2)
+    assert brief["forecast_as_of"] == 0
+    assert all(6 <= e["t_min"] <= 36 for e in brief["recent_events"])
+    answer = asyncio.run(agent.fallback_chat(ctx, "What changed this shift?", None))
+    assert any(ctx.evidence[k]["source"] == "get_shift_brief" for k in answer.evidence_ids)
+    session.reset()
+    new = agent.snapshot()["shift_brief"]
+    assert new["run_id"] != brief["run_id"] and new["t_min"] == 0
+    assert all(len(t["samples"]) == 1 for t in new["trends"])
 
 
 def test_audit_failure_does_not_break_monitor(agent_setup, tmp_path):

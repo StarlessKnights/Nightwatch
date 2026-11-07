@@ -1,17 +1,22 @@
 import { useEffect, useState } from 'react'
-import type { AgentState, Evidence, Interpretation } from '../agentTypes'
+import type { AgentState, Evidence, Interpretation, SourceRecord } from '../agentTypes'
 import { money } from '../format'
 import { agentCall } from '../useAgent'
+
+import { evidenceLabel } from '../evidenceFormat'
+import { EvidenceViewer, SourceTimeline } from './EvidenceViewer'
+import { ShiftDesk, ScenarioCompare, WhatIfLab } from './ShiftDesk'
 
 interface Props {
   data: AgentState | null; error: string | null
   run: (path: string, body: unknown) => Promise<boolean>
   onFocus: (assets: string[]) => void; assets: string[]
 }
-type History = { coverage: string; signals: { asset_id: string; observed_fault_events: number; interpretation: string; sources: unknown[] }[]; notes: { id: string; run_id: string; at: string; data: { asset_id: string; text: string; provenance: string } }[] }
+type History = { coverage: string; signals: { asset_id: string; observed_fault_events: number; interpretation: string; sources: SourceRecord[] }[]; notes: { id: string; run_id: string; at: string; data: { asset_id: string; text: string; provenance: string } }[] }
 
 export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) {
-  const [tab, setTab] = useState('Incidents')
+  const [tab, setTab] = useState('Brief')
+  const [notesSaved, setNotesSaved] = useState(0)
   const [input, setInput] = useState('')
   const [selectedEvidence, setSelectedEvidence] = useState<Evidence | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -19,16 +24,17 @@ export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) 
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [asset, setAsset] = useState(assets[0] ?? '')
+  const latestActivity = data?.activity.at(-1)?.id
   useEffect(() => {
     let active = true
     if (tab === 'History') agentCall<History>('/history').then((value) => { if (active) { setHistory(value); setHistoryError(null) } }).catch((e) => { if (active) setHistoryError(String(e)) })
     return () => { active = false }
-  }, [tab, data?.run_id, data?.activity.length])
+  }, [tab, data?.run_id, latestActivity, notesSaved])
   if (!data) return <div className="panel-fill"><h3>AVON Intelligence</h3><p className="hint">{error ?? 'Connecting to intelligence service…'}</p></div>
 
   const refs = (ids: string[]) => <div className="evidence-links">{ids.map((id) => {
     const evidence = data.evidence[id]
-    return evidence ? <button key={id} title={evidence.path} onClick={() => setSelectedEvidence(evidence)}>{evidence.label}</button> : null
+    return evidence ? <button key={id} title={evidence.path} onClick={() => setSelectedEvidence(evidence)}>{evidenceLabel(evidence)}</button> : null
   })}</div>
   const interpretations = (items: Interpretation[], label: string) => items.map((item, index) => <div className="interpretation" key={`${label}-${index}`}><span className="chip">{label}</span> {item.text}{refs(item.evidence_ids)}</div>)
   const send = async (text: string) => {
@@ -43,13 +49,16 @@ export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) 
     await run(`/proposals/${id}/${decision}`, { run_id: data.run_id })
     setBusy(null)
   }
-  return <div className="panel-fill scroll intelligence">
-    <div className="intelligence-heading"><div><h3>AVON Intelligence</h3><span className={`agent-status ${data.enabled ? 'online' : ''}`}>{data.status}</span></div>
+  return <div className="panel-fill intelligence">
+    <div className="intelligence-heading"><div><span className="eyebrow">INVESTIGATION DESK</span><h2>AVON Intelligence</h2><span className={`agent-status ${data.enabled ? 'online' : ''}`}>{data.status}</span></div>
       <label className="toggle"><input type="checkbox" checked={data.enabled} onChange={(e) => run('/enabled', { enabled: e.target.checked })} />Enabled</label></div>
     <p className="hint">{data.provider} · {data.last_observation_min == null ? 'Waiting for observation' : `observed T+${data.last_observation_min}`}</p>
-    {data.provider === 'Deterministic fallback' && <p className="agent-notice">Nemotron is not connected. Monitoring, simulator evidence, and supported what-if checks remain available.</p>}
+    {data.provider === 'Deterministic fallback' && <p className="agent-notice">Nemotron offline · Shift handoff and what-if simulations are available.</p>}
     {(error || data.error || data.provider_error || data.audit_error) && <p role="alert" className="agent-notice warn">{error || data.error || data.provider_error || data.audit_error}</p>}
-    <div className="intelligence-tabs" role="tablist" aria-label="Intelligence views">{['Incidents', 'Actions', 'Ask', 'Activity', 'History'].map((name) => <button role="tab" aria-selected={tab === name} className={tab === name ? 'on' : ''} key={name} onClick={() => setTab(name)}>{name}{name === 'Incidents' && data.incidents.some((i) => i.status === 'active') ? ` ${data.incidents.filter((i) => i.status === 'active').length}` : ''}</button>)}</div>
+    <nav className="intelligence-tabs" aria-label="Intelligence views">{['Brief', 'Incidents', 'What-if', 'Ask', 'Proposals', 'History'].map(name => <button key={name} aria-pressed={tab === name} className={tab === name ? 'on' : ''} onClick={() => setTab(name)}>{name}</button>)}</nav>
+    <div key={tab} className="intel-body">
+    {tab === 'Brief' && <ShiftDesk data={data} openIncidents={() => setTab('Incidents')} openLab={() => setTab('What-if')} />}
+    {tab === 'What-if' && <WhatIfLab data={data} run={run} openEvidence={id => setSelectedEvidence(data.evidence[id] ?? null)} />}
 
     {tab === 'Incidents' && <>
       {!data.incidents.length && <div className="agent-empty">Watching the network.<p className="hint">Meaningful equipment, alarm, and forecast changes will appear here automatically.</p></div>}
@@ -60,7 +69,7 @@ export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) 
         <p className="hint">{incident.affected_assets.join(' · ')}</p>
         {incident.automatic.length > 0 && <div className="auto-response"><span className="tag tag-AUTO">AUTO</span>{incident.automatic.map((event) => <p key={event.id}>{event.text}</p>)}</div>}
         <p><span className="tag tag-ADVISORY">ADVISORY</span> {incident.attention}</p>
-        {refs(incident.evidence_ids)}
+        <details><summary>Simulator evidence · {incident.evidence_ids.length} readings</summary>{refs(incident.evidence_ids)}</details>
         {interpretations(incident.interpretations, 'Hypothesis')}
         <details><summary>Recommendation critic</summary>{interpretations(incident.concerns, 'Review')}</details>
         {incident.question && <p className="agent-notice">{incident.question}</p>}
@@ -69,9 +78,9 @@ export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) 
       {data.hypotheses.map((h) => <article className="incident" key={h.id}><h4>Hypothesis: {h.fault.target} · {h.fault.type}</h4><p>{h.meaning}</p>{refs(h.evidence_ids)}</article>)}
     </>}
 
-    {tab === 'Actions' && <>
-      <p className="hint">Every available action has passed deterministic simulation. Approval checks current conditions again. Original decision-engine ranking is unchanged.</p>
-      {!data.proposals.length && <div className="agent-empty">No proposals yet.</div>}
+    {tab === 'Proposals' && <>
+      <p className="hint">Alternatives proposed during an investigation appear here. The Decision Engine validates them and checks conditions again at approval.</p>
+      {!data.proposals.length && <div className="agent-empty">No investigation proposals. Ranked actions are in the Decision Engine.</div>}
       {[...data.proposals].reverse().map((proposal) => <article className="incident" key={proposal.id}>
         <div className="opt-top"><span className={`tag tag-${proposal.status === 'APPROVED' || proposal.status === 'EXECUTED_IN_SIM' ? 'OPERATOR' : 'ADVISORY'}`}>{proposal.status === 'APPROVED' || proposal.status === 'EXECUTED_IN_SIM' ? 'OPERATOR' : 'ADVISORY'}</span><span className="chip">{proposal.status.replaceAll('_', ' ')}</span></div>
         <h4>{proposal.option?.label ?? proposal.actions.map((a) => `${a.kind} ${a.target}`).join(' + ')}</h4>
@@ -85,23 +94,26 @@ export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) 
     </>}
 
     {tab === 'Ask' && <>
-      <div className="suggested-questions">{['Why is T-104 filling up?', 'What happens if P-204 becomes unavailable?', 'What happens if treatment capacity drops by 50%?', 'Find a cheaper alternative to the current recommendation.'].map((text) => <button key={text} disabled={data.chat_busy || !!busy || !data.enabled} onClick={() => send(text)}>{text}</button>)}</div>
-      {data.messages.map((message) => <article className={`agent-message ${message.role}`} key={message.id}><span className={`tag tag-${message.role === 'operator' ? 'OPERATOR' : 'ADVISORY'}`}>{message.role === 'operator' ? 'OPERATOR' : 'ADVISORY'}</span><span className="hint"> T+{message.t_min} {message.source === 'DETERMINISTIC' ? '· fallback' : ''}</span><p>{message.text}</p>{refs(message.evidence_ids)}{interpretations(message.interpretations ?? [], 'Hypothesis')}{interpretations(message.concerns ?? [], 'Review')}{message.question && <p className="agent-notice">{message.question}</p>}</article>)}
-      {data.chat_busy && <p aria-live="polite" className="hint">Consulting evidence and running analysis…</p>}
+      {(data.chat_busy || busy === 'chat') && <div className="ask-progress" role="status">Reviewing the plant readings…<div role="progressbar" aria-label="Preparing operator assessment"><i /></div></div>}
+      <div className="suggested-questions">{['Why is T-104 filling up?', 'What happens if P-204 becomes unavailable?', 'What changed this shift?'].map((text) => <button key={text} disabled={data.chat_busy || !!busy || !data.enabled} onClick={() => send(text)}>{text}</button>)}</div>
+      {data.messages.map((message) => <article className={`agent-message ${message.role}`} key={message.id}><span className={`tag tag-${message.role === 'operator' ? 'OPERATOR' : 'ADVISORY'}`}>{message.role === 'operator' ? 'OPERATOR' : 'ADVISORY'}</span><span className="hint"> T+{message.t_min} {message.source === 'DETERMINISTIC' ? '· Rule-based assessment' : message.source === 'NEMOTRON' ? '· Nemotron' : ''}</span><p>{message.text}</p>{interpretations(message.interpretations ?? [], message.source === 'NEMOTRON' ? 'Nemotron’s read' : 'Operator assessment')}{interpretations(message.concerns ?? [], 'Review')}{message.evidence_ids.some(id => ![...(message.interpretations ?? []), ...(message.concerns ?? [])].some(item => item.evidence_ids.includes(id))) && <details><summary>Supporting readings</summary>{refs(message.evidence_ids.filter(id => ![...(message.interpretations ?? []), ...(message.concerns ?? [])].some(item => item.evidence_ids.includes(id))))}</details>}{message.question && <p className="agent-notice">{message.question}</p>}</article>)}
+
       <form className="agent-chat" onSubmit={(e) => { e.preventDefault(); void send(input) }}><label htmlFor="agent-question">Ask about the network or a simulated scenario</label><textarea id="agent-question" maxLength={2000} rows={3} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask AVON Intelligence…" /><button className="primary" disabled={!input.trim() || data.chat_busy || !!busy || !data.enabled}>Analyze</button></form>
-      {[...data.scenarios].reverse().map((scenario) => <article className="incident" key={scenario.id}><span className="chip">WHAT-IF · isolated simulation</span><h4>{scenario.faults.map((f) => `${f.target}: ${f.type}`).join(' + ')}</h4>{Object.entries(scenario.forecast).map(([tank, fc]) => <p key={tank}>{tank}: {fc.time_to_HH == null ? 'No HH crossing in the forecast horizon' : `HH in ${fc.time_to_HH} min`}</p>)}<p>Do-nothing cost: {money(scenario.do_nothing_cost)}</p>{refs(scenario.evidence_ids)}</article>)}
+      {[...data.scenarios].reverse().map(s => <details key={s.id}><summary>What-if at T+{s.t_min} · {s.faults.map(f => f.target).join(', ')}</summary><ScenarioCompare scenario={s}/>{refs(s.evidence_ids)}</details>)}
     </>}
 
-    {tab === 'Activity' && <>{[...data.activity].reverse().map((item) => <div className="agent-activity" key={item.id}><span className="hint">T+{item.t_min}</span><div><b>{item.title}</b><p className="hint">{item.detail}</p></div></div>)}<details><summary>Model configuration</summary><p className="hint">Routine: {data.model}<br />Reasoning: {data.reasoning_model}</p></details></>}
+    {tab === 'History' && <details><summary>Intelligence activity</summary>{[...data.activity].reverse().map((item) => <div className="agent-activity" key={item.id}><span className="hint">T+{item.t_min}</span><div><b>{item.title}</b><p className="hint">{item.detail}</p></div></div>)}<details><summary>Model configuration</summary><p className="hint">Routine: {data.model}<br />Reasoning: {data.reasoning_model}</p></details></details>}
 
     {tab === 'History' && <>
       <p className="hint">Synthetic maintenance notes and fault observations retain source provenance. They do not change simulation reliability parameters.</p>
       {historyError && <p role="alert">{historyError}</p>}
-      <form className="agent-chat" onSubmit={async (e) => { e.preventDefault(); setBusy('note'); const ok = await run('/notes', { asset_id: asset, text: note }); if (ok) setNote(''); setBusy(null) }}><label htmlFor="note-asset">Asset</label><select id="note-asset" value={asset} onChange={(e) => setAsset(e.target.value)}>{assets.map((a) => <option key={a}>{a}</option>)}</select><label htmlFor="maintenance-note">Maintenance observation</label><textarea id="maintenance-note" rows={3} maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)} /><button disabled={!note.trim() || !!busy}>Save simulated note</button></form>
-      {history?.signals.map((signal) => <article className="incident" key={signal.asset_id}><h4>{signal.asset_id} · {signal.observed_fault_events} observed fault events</h4><p className="hint">{signal.interpretation}</p><details><summary>Source events</summary><pre>{JSON.stringify(signal.sources, null, 2)}</pre></details></article>)}
+      <details><summary>Add a maintenance note</summary><form className="agent-chat" onSubmit={async (e) => { e.preventDefault(); setBusy('note'); const ok = await run('/notes', { asset_id: asset, text: note }); if (ok) { setNote(''); setNotesSaved(n => n+1) } setBusy(null) }}><label htmlFor="note-asset">Asset</label><select id="note-asset" value={asset} onChange={(e) => setAsset(e.target.value)}>{assets.map((a) => <option key={a}>{a}</option>)}</select><label htmlFor="maintenance-note">Maintenance observation</label><textarea id="maintenance-note" rows={3} maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)} /><button disabled={!note.trim() || !!busy}>Save simulated note</button></form></details>
+      {history && !history.signals.length && <p className="hint">No pump fault events in retained history.</p>}
+      {history?.signals.map((signal) => <article className="incident" key={signal.asset_id}><h4>{signal.asset_id} · {signal.observed_fault_events} observed fault events</h4><p className="hint">{signal.interpretation}</p><details><summary>Source events</summary><SourceTimeline rows={signal.sources}/></details></article>)}
       {history?.notes.map((item) => <article className="incident" key={item.id}><h4>{item.data.asset_id}</h4><p>{item.data.text}</p><details><summary>Provenance</summary><p className="hint">{item.data.provenance}<br />{item.at}<br />Run {item.run_id}<br />Record {item.id}</p></details></article>)}<p className="hint">{history?.coverage}</p>
     </>}
 
-    {selectedEvidence && <div className="evidence-overlay"><section role="dialog" aria-modal="true" aria-label="Simulator evidence" className="evidence-viewer"><div className="opt-top"><h3 className="grow">Simulator evidence</h3><button autoFocus aria-label="Close evidence" onClick={() => setSelectedEvidence(null)}>Close</button></div><h4>{selectedEvidence.label}</h4><p className="hint">{selectedEvidence.source} · T+{selectedEvidence.t_min} · revision {selectedEvidence.revision}<br />{selectedEvidence.path}<br />Run {selectedEvidence.run_id}</p><pre>{JSON.stringify(selectedEvidence.value, null, 2)}</pre><p className="hint">Recorded observation; values may differ from the current simulation.</p></section></div>}
+    </div>
+    {selectedEvidence && <EvidenceViewer evidence={selectedEvidence} close={() => setSelectedEvidence(null)} />}
   </div>
 }

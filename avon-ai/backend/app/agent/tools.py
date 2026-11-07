@@ -8,9 +8,11 @@ from ..forecast import rollout, tank_forecasts
 from ..network import impact
 from ..state import Fault
 from .proposals import (ActionProposal, AssetArgs, EmptyArgs, FaultHypothesis, HistoryArgs, ScenarioProposal)
+from .handoff import shift_brief
 
 
 TOOL_MODELS = {
+    "get_shift_brief": EmptyArgs,
     "get_network_state": EmptyArgs, "get_asset_state": AssetArgs, "get_forecast": EmptyArgs,
     "get_impact": AssetArgs, "get_recommendations": EmptyArgs, "get_event_history": HistoryArgs,
     "get_active_alarms": EmptyArgs, "get_scenario_results": EmptyArgs,
@@ -18,6 +20,7 @@ TOOL_MODELS = {
     "submit_scenario_proposal": ScenarioProposal,
 }
 DESCRIPTIONS = {
+    "get_shift_brief": "For handovers or questions about changes, read measured tank trends, recent events, unacknowledged alarms and the next forecast high-high crossing.",
     "get_network_state": "Read the network graph and current asset conditions. Transfer edges are not simulated routes.",
     "get_asset_state": "Read current values for one asset.",
     "get_forecast": "Read deterministic time-to-limit forecasts.",
@@ -71,6 +74,7 @@ class Context:
         self.dto = copy.deepcopy(session.state_dict())
         self.dto["faults"] = [f for f in self.dto["faults"] if f["start_min"] <= self.state.t_min]
         self.events = copy.deepcopy(session.event_log[-100:])
+        self.brief = copy.deepcopy(shift_brief(session))
         self.audit = audit
         self.evidence, self.proposals, self.scenarios, self.hypotheses = {}, [], [], []
         self._rec = None
@@ -122,7 +126,9 @@ class Context:
             raise ValueError("Tool not allowed")
         args = TOOL_MODELS[name].model_validate(arguments)
         self.audit.record(self.run_id, "tool_call", {"name": name, "arguments": args.model_dump(), "revision": self.revision})
-        if name == "get_network_state":
+        if name == "get_shift_brief":
+            result = self.fact(name, "shift.brief", self.brief, "Shift handoff")
+        elif name == "get_network_state":
             result = {"graph": {"nodes": [{"id": n, "type": v["type"]} for n, v in self.topo.nodes.items()],
                                 "edges": self.topo.edges}, "assets": [self.asset(a) for a in self.topo.nodes]}
         elif name == "get_asset_state":
@@ -182,11 +188,16 @@ class Context:
                 params = validate_fault(spec, altered, self.topo)
                 altered = replace(altered, faults=altered.faults + (Fault(uuid4().hex, spec.type, spec.target, params, altered.t_min),))
             rec = decision.recommend(altered, self.topo, self.cfg, engine_enabled=self.engine_enabled)
+            # The reference starts at the identical simulated minute with no hypothetical fault added.
+            baseline = decision.recommend(self.state, self.topo, self.cfg, engine_enabled=False)
             result = {"id": uuid4().hex, "kind": "scenario", "status": "VALIDATED", "run_id": self.run_id,
                       "t_min": self.state.t_min, "faults": args.model_dump()["faults"],
                       "forecast": {t: f.model_dump(exclude={"series"}) for t, f in rec.forecast.items()},
                       "options": [self.option_summary(o) for o in rec.options], "best_option_id": rec.best_option_id,
-                      "do_nothing_cost": rec.do_nothing_cost, "hypothetical": True}
+                      "do_nothing_cost": rec.do_nothing_cost, "hypothetical": True,
+                      "horizon_min": self.cfg.time.horizon_min,
+                      "baseline": {"do_nothing_cost": baseline.do_nothing_cost,
+                                   "forecast": {t: f.model_dump(exclude={"series"}) for t, f in baseline.forecast.items()}}}
             evidence = self.fact(name, f"scenarios.{result['id']}", result, "What-if simulation (not live)")
             result["evidence_ids"] = [evidence["id"]]
             self.scenarios.append(result)

@@ -1,4 +1,14 @@
-import type { Option } from './types'
+import type { Option, SimEvent } from './types'
+
+export interface Trend { tank: string; change_bbl: number; samples: { t: number; bbl: number }[] }
+export interface ShiftBrief {
+  run_id: string; t_min: number; from_min: number; trends: Trend[]; recent_events: SimEvent[]
+  unacknowledged: number; forecast_as_of: number; horizon_min: number
+  first_limit: { tank: string; at_min: number } | null
+}
+export interface SourceRecord {
+  id: string; at: string; run_id: string; data: SimEvent
+}
 
 export interface Evidence {
   id: string; run_id: string; revision: number; t_min: number
@@ -23,11 +33,14 @@ export interface AgentMessage {
   evidence_ids: string[]; interpretations?: Interpretation[]; concerns?: Interpretation[]; question?: string | null
 }
 export interface ScenarioResult {
+  horizon_min: number
+  baseline: { do_nothing_cost: number; forecast: ScenarioResult['forecast'] }
   id: string; t_min: number; evidence_ids: string[]; best_option_id: string | null; do_nothing_cost: number
   faults: { type: string; target: string; params: Record<string, unknown> }[]
   forecast: Record<string, { time_to_HH: number | null; status: string }>
 }
 export interface AgentState {
+  shift_brief: ShiftBrief | null
   run_id: string; enabled: boolean; status: string; provider: string; model: string; reasoning_model: string
   provider_error: string | null; error: string | null; audit_error: string | null; last_observation_min: number | null
   incidents: Incident[]; proposals: Proposal[]; messages: AgentMessage[]; scenarios: ScenarioResult[]

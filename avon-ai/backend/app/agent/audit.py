@@ -1,6 +1,7 @@
 """Durable provenance; an unavailable audit disk never interrupts the simulator."""
 import json
 import sqlite3
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -10,11 +11,12 @@ class Audit:
         self.path = path
         self.error = None
 
+    @contextmanager
     def _connect(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        db = sqlite3.connect(self.path, timeout=0.2)
-        db.execute("CREATE TABLE IF NOT EXISTS audit (id TEXT PRIMARY KEY, at TEXT, run TEXT, kind TEXT, payload TEXT)")
-        return db
+        with closing(sqlite3.connect(self.path, timeout=0.2)) as db, db:
+            db.execute("CREATE TABLE IF NOT EXISTS audit (id TEXT PRIMARY KEY, at TEXT, run TEXT, kind TEXT, payload TEXT)")
+            yield db
 
     def record(self, run, kind, payload, identity=None):
         row_id = identity or uuid4().hex

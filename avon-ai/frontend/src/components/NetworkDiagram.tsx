@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Background, Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { api } from '../api'
@@ -103,8 +103,18 @@ function edgeFlow(env: Envelope, from: string, to: string, fromKind: string): nu
 }
 
 export function NetworkDiagram({ env, network, incidentAssets = [] }: { env: Envelope; network: Network; incidentAssets?: string[] }) {
+  const container = useRef<HTMLDivElement>(null)
+  const refit = useRef<() => void>(() => {})
+  useEffect(() => {
+    let timer: number
+    const observer = new ResizeObserver(([entry]) => {
+      window.clearTimeout(timer)
+      if (entry.contentRect.width) timer = window.setTimeout(() => refit.current(), 120)
+    })
+    observer.observe(container.current!)
+    return () => { observer.disconnect(); window.clearTimeout(timer) }
+  }, [])
   const [focus, setFocus] = useState<{ id: string; related: Set<string> } | null>(null)
-  useEffect(() => { setFocus(null) }, [env.scenario.id])
 
   const kinds = useMemo(() => Object.fromEntries(network.topology.nodes.map((n) => [n.id, n.type])), [network])
   const inFocus = (id: string) => !focus || focus.id === id || focus.related.has(id)
@@ -135,10 +145,11 @@ export function NetworkDiagram({ env, network, incidentAssets = [] }: { env: Env
   }
 
   return (
-    <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.1 }}
+    <div ref={container} style={{ height: '100%', width: '100%' }}><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.1 }}
+      onInit={view => { refit.current = () => { void view.fitView({padding: 0.1}) } }}
       nodesConnectable={false} proOptions={{ hideAttribution: true }} onNodeClick={onClick} onPaneClick={() => setFocus(null)}
       minZoom={0.3} colorMode="dark">
       <Background gap={24} />
-    </ReactFlow>
+    </ReactFlow></div>
   )
 }

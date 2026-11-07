@@ -5,10 +5,11 @@ import re
 import time
 from uuid import uuid4
 
-from .. import actions, decision
+from .. import decision
 from .audit import Audit
 from .gateway import Gateway, GatewayError
 from .history import signals
+from .handoff import HANDOFF_TERMS, handoff_text, operator_read, shift_brief
 from .incidents import briefing
 from .monitor import observe
 from .proposals import ActionSpec, AgentAnswer
@@ -105,8 +106,9 @@ class Agent:
         for proposal in ctx.proposals:
             if not any(p["id"] == proposal["id"] or (p.get("actions") == proposal["actions"] and p["status"] in ("PENDING", "VALIDATED", "APPROVED") ) for p in self.proposals):
                 self.proposals.append(proposal)
-        self.scenarios.extend(ctx.scenarios)
-        self.hypotheses.extend(ctx.hypotheses)
+        for source, target in ((ctx.scenarios, self.scenarios), (ctx.hypotheses, self.hypotheses)):
+            existing = {item["id"] for item in target}
+            target.extend(item for item in source if item["id"] not in existing)
         self.scenarios, self.hypotheses = self.scenarios[-20:], self.hypotheses[-30:]
         self.proposals = self.proposals[-100:]
         # Retain all evidence referenced by the bounded visible collections.
@@ -169,17 +171,6 @@ class Agent:
                            post_incident_summary="Observed conditions cleared. Review the retained evidence and automatic response history.")
                 self.audit.record(ctx.run_id, "incident_resolved", old)
         self.incidents = self.incidents[:40]
-        # A model outage still leaves immediately usable deterministic briefings and validated options.
-        if groups and ctx.engine_enabled:
-            rec = ctx.recommendation()
-            if rec.best_option_id and rec.best_option_id != actions.DO_NOTHING:
-                combo = actions.combo_from_id(rec.best_option_id)
-                specs = []
-                for a in combo:
-                    key = {actions.START_STANDBY_PUMP: "pump", actions.REDUCE_PRODUCTION: "source", actions.DISPATCH_TRUCK: "tank"}[a.kind]
-                    specs.append({"kind": a.kind, "target": a.params[key], "pct": a.params.get("pct")})
-                await asyncio.to_thread(ctx.execute, "submit_action_proposal", {"actions": specs, "evidence_ids": new[0]["evidence_ids"][-1:]})
-                ctx.proposals[-1]["origin"] = "DETERMINISTIC"
         self.publish_context(ctx)
         for item in new:
             self.audit.record(ctx.run_id, "incident", item)
@@ -199,7 +190,7 @@ class Agent:
     async def enrich(self, ctx, new, groups, signature, seed):
         answer = None
         try:
-            answer = await self.gateway.analyze(ctx, "Review these incidents, correlate their causes, critique the deterministic recommendations and propose useful alternatives through tools.", seed,
+            answer = await self.gateway.analyze(ctx, "Investigate these incidents. Use measured trends and event order to distinguish observed changes from possible causes. Identify what the operator should check next. Propose an alternative only if it addresses a gap in the ranked options.", seed,
                                                 complex_task=any(i["severity"] == "critical" for i in new) or len(groups) > 1,
                                                 activity=self.record_activity)
         except GatewayError as exc:
@@ -241,17 +232,39 @@ class Agent:
                 self.analyzing = True
                 ctx = Context(self.session, self.audit)
                 target = next((a for a in ctx.topo.nodes if a.lower() in message.lower()), None)
-                seed = await asyncio.to_thread(ctx.execute, "get_asset_state" if target else "get_forecast", {"asset_id": target} if target else {})
+                handover = any(term in message.lower() for term in HANDOFF_TERMS)
+                seed_tool = "get_shift_brief" if handover else "get_asset_state" if target else "get_forecast"
+                seed = await asyncio.to_thread(ctx.execute, seed_tool, {"asset_id": target} if seed_tool == "get_asset_state" else {})
+                rundown = handover and not target and not any(term in message.lower() for term in
+                    ("what if", "what happens", "simulate", "scenario", "propose", "alternative", "history"))
+                readings = [seed]
+                if rundown:
+                    if ctx.brief["trends"]:
+                        readings.append(ctx.asset(ctx.brief["trends"][0]["tank"]))
+                    if ctx.brief["recent_events"]:
+                        event = ctx.brief["recent_events"][0]
+                        readings.append(ctx.fact("get_event_history", f"events.{event['id']}", event, event["text"]))
                 source = "NEMOTRON"
                 try:
-                    answer = await self.gateway.analyze(ctx, message, {"evidence": seed, "as_of_min": ctx.state.t_min,
+                    answer = await self.gateway.analyze(ctx, message, {"evidence": readings if rundown else seed, "as_of_min": ctx.state.t_min,
                         "previous_messages": [{"role": m["role"], "text": m.get("text", ""), "question": m.get("question")} for m in self.messages[-6:]]},
-                        complex_task=True, activity=self.record_activity)
-                except GatewayError as exc:
+                        complex_task=True, activity=self.record_activity,
+                        evidence_only=rundown,
+                        explain_references=True)
+                except Exception as exc:
                     source = "DETERMINISTIC"
-                    self.record_activity("Nemotron fallback", str(exc))
-                    answer = await self.fallback_chat(ctx, message, target)
-                entry = {"id": uuid4().hex, "role": "agent", "text": "Analysis based on the recorded observation.",
+                    self.record_activity("Nemotron fallback", str(exc) if isinstance(exc, GatewayError) else "Provider did not return an answer")
+                    try:
+                        answer = AgentAnswer() if rundown else await self.fallback_chat(ctx, message, target)
+                    except Exception:
+                        answer = AgentAnswer()
+                    fact, assessment = operator_read(ctx)
+                    answer.evidence_ids = [fact["id"], *answer.evidence_ids][:20]
+                    answer.interpretations = AgentAnswer(interpretations=[{"text": assessment, "evidence_ids": [fact["id"]]}]).interpretations
+                text = "Analysis based on the recorded observation."
+                if handover:
+                    text = handoff_text(seed["value"])
+                entry = {"id": uuid4().hex, "role": "agent", "text": text,
                          "source": source, "t_min": ctx.state.t_min, "run_id": ctx.run_id, **answer.model_dump()}
                 if ctx.run_id != self.session.run_id:
                     return
@@ -263,7 +276,16 @@ class Agent:
             raise
         except Exception:
             if run_id == self.session.run_id:
-                self.messages.append({"id": uuid4().hex, "role": "agent", "source": "DETERMINISTIC", "text": "Analysis failed. Please retry with an asset and a specific condition.", "evidence_ids": [], "t_min": self.session.state.t_min})
+                fallback = Context(self.session, self.audit)
+                fact, assessment = operator_read(fallback)
+                entry = {"id": uuid4().hex, "run_id": run_id, "role": "agent", "source": "DETERMINISTIC",
+                         "text": handoff_text(fallback.brief), "evidence_ids": [fact["id"]],
+                         "interpretations": [{"text": assessment, "evidence_ids": [fact["id"]]}],
+                         "t_min": fallback.state.t_min}
+                self.messages.append(entry)
+                self.messages = self.messages[-40:]
+                self.publish_context(fallback)
+                self.audit.record(run_id, "operator_answer", entry)
         finally:
             self.analyzing = False
             self.wake.set()
@@ -288,6 +310,9 @@ class Agent:
                 await asyncio.to_thread(ctx.execute, "submit_scenario_proposal", {"faults": [spec]})
             else:
                 question = "Which asset and fault should I simulate? For example: P-204 unavailable, or treatment capacity drops by 50%."
+        elif any(x in lower for x in HANDOFF_TERMS):
+            if not any(e["source"] == "get_shift_brief" for e in ctx.evidence.values()):
+                await asyncio.to_thread(ctx.execute, "get_shift_brief", {})
         elif "history" in lower or "maintenance" in lower or "repeated" in lower:
             await asyncio.to_thread(ctx.execute, "get_event_history", {"asset_id": target, "limit": 10})
         else:
@@ -340,6 +365,7 @@ class Agent:
                 "model": self.settings.routine_model, "reasoning_model": self.settings.reasoning_model,
                 "provider_error": self.gateway.last_error, "error": self.error, "audit_error": self.audit.error,
                 "last_observation_min": self.last_observation, "incidents": self.incidents, "proposals": self.proposals,
+                "shift_brief": shift_brief(self.session) if self.enabled else None,
                 "activity": self.activity[-40:], "messages": self.messages, "scenarios": self.scenarios,
                 "hypotheses": self.hypotheses, "evidence": self.evidence,
                 "chat_busy": bool(self.chat_task and not self.chat_task.done())}

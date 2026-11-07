@@ -17,6 +17,13 @@ def briefing(ctx, group):
     auto = [e for e in ctx.events if e["tag"] == "AUTO" and e["asset"] in affected][-8:]
     for event in auto:
         evidence_ids.append(ctx.fact("get_event_history", f"events.{event['id']}", event, event["text"])["id"])
+    trend = next((row for row in ctx.brief["trends"] if row["tank"] in group["tanks"]), None)
+    summary = rec.headline
+    if trend and len(trend["samples"]) > 1:
+        delta = trend["change_bbl"]
+        direction = f"rose {delta:g} bbl" if delta > 0 else f"fell {abs(delta):g} bbl" if delta < 0 else "was unchanged"
+        summary = f"{trend['tank']} volume {direction} from T+{ctx.brief['from_min']} to T+{ctx.state.t_min}."
+        evidence_ids.append(ctx.fact("get_shift_brief", "shift.brief", ctx.brief, "Observed tank trends")["id"])
     recommendation = ctx.fact("get_recommendations", "recommendation", {
         "ranked_option_ids": rec.ranked_option_ids, "best_option_id": rec.best_option_id,
         "do_nothing_cost": rec.do_nothing_cost, "horizon_min": ctx.cfg.time.horizon_min,
@@ -31,6 +38,7 @@ def briefing(ctx, group):
             "first_seen_min": ctx.state.t_min, "status": "active", "severity": severity,
             "title": "Network condition: " + ", ".join(group["roots"]), "roots": group["roots"],
             "tanks": group["tanks"], "affected_assets": sorted(affected), "evidence_ids": evidence_ids,
-            "summary": rec.headline, "automatic": auto, "interpretations": [], "concerns": review(ctx, recommendation["id"]),
-            "attention": "Review validated options; operator approval is required." if rec.ranked_option_ids else "Monitor protection and review rejected options; no available action has been established.",
+            "summary": summary, "automatic": auto, "interpretations": [], "concerns": review(ctx, recommendation["id"]),
+            "attention": ("Check whether tank levels stabilize after the automatic response." if auto
+                          else "Compare observed tank levels with the forecast and check the affected equipment."),
             "source": "DETERMINISTIC", "question": None}
