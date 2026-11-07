@@ -47,6 +47,7 @@ export interface Envelope {
   state: SimStateDto
   forecast: { tanks: Record<string, TankForecast>; do_nothing: Record<string, number[]> | null; series_step_min: number; as_of_min: number }
   payoff: Payoff | null
+  ledger: { loss: number; saved: number; net: number; breakdown: Record<string, number> }
 }
 
 export interface HistoryPoint { t: number; [tank: string]: number }

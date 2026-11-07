@@ -110,3 +110,17 @@ def test_property_recommended_options_satisfy_hard_constraints(topo, cfg, scene)
         assert act.DO_NOTHING in opts(rec)
         costs = [opts(rec)[o].cost_breakdown.total for o in rec.ranked_option_ids]
         assert costs == sorted(costs)
+
+
+def test_ledger_loss_and_save():
+    from app.session import Session
+    s = Session()
+    s.load("scene2_pump_degraded")
+    s.advance(80)  # ignored: interlock trips
+    led = s.ledger_dict()
+    assert led["breakdown"]["shutin"] >= 24480 and led["saved"] == 0
+    s.load("scene2_pump_degraded")
+    s.approve("START_STANDBY_PUMP:P-204")
+    s.advance(120)
+    led = s.ledger_dict()
+    assert led["loss"] < 1000 and led["saved"] > 20000 and led["net"] > 0

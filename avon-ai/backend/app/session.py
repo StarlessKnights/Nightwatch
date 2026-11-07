@@ -8,7 +8,7 @@ import numpy as np
 from . import actions as act
 from collections import deque
 
-from . import alarms, decision, diagnosis, faults, messages, pump_model
+from . import alarms, consequence, decision, diagnosis, faults, messages, pump_model
 from .forecast import rollout, tank_forecasts
 from .models import Config, Recommendation, load_config, patch_config
 from .network import Topology, impact, load_topology
@@ -42,6 +42,7 @@ class Session:
         self._event_seq = 0
         self._fault_seq = 0
         self.payoff: dict | None = None
+        self.ledger = {"shutin": 0.0, "spill": 0.0, "action_fixed": 0.0, "saved": 0.0}
         self.last_advisory: str | None = None
         self.forecast: dict = {}
         self.forecast_do_nothing: dict | None = None
@@ -106,10 +107,28 @@ class Session:
     # ---------- stepping ----------
     def advance(self, n: int = 1) -> None:
         for _ in range(n):
-            self.state = step(self.state, self.topo, self.cfg, self.rng)
+            prev = self.state
+            self.state = step(prev, self.topo, self.cfg, self.rng)
+            self._accrue(prev)
             self.log(*self.state.new_events)
             self._record_history()
             self._record_telemetry(self.state.t_min - self.cfg.time.dt_min)
+
+    def _accrue(self, prev: SimState) -> None:
+        """Realized loss: each interlock shut-in and each overflow event, priced with the consequence model."""
+        s, cfg = self.state, self.cfg
+        for tank in s.trip_counts:
+            rate = sum(prev.sources[x].rate_bbl_hr for x in self.topo.tank_sources[tank])
+            self.ledger["shutin"] += (s.trip_counts[tank] - prev.trip_counts[tank]) * consequence.shutin_cost(rate, cfg)
+            self.ledger["spill"] += (s.overflow_events[tank] - prev.overflow_events[tank]) * cfg.consequence.spill_penalty
+
+    def ledger_dict(self) -> dict:
+        l, c = self.ledger, self.cfg
+        curtail = consequence.production_loss(self.state.curtailed_bbl, c)
+        loss = l["shutin"] + l["spill"] + l["action_fixed"] + curtail
+        return {"loss": round(loss, 2), "saved": round(l["saved"], 2), "net": round(l["saved"] - loss, 2),
+                "breakdown": {"shutin": round(l["shutin"], 2), "spill": round(l["spill"], 2),
+                              "curtailed_production": round(curtail, 2), "action_fixed": round(l["action_fixed"], 2)}}
 
     def refresh_forecast(self) -> None:
         """Do-nothing rollout (includes already-approved actions) + AVON AI predictive alarms."""
@@ -207,6 +226,8 @@ class Session:
         self.payoff = {"option_id": option_id, "label": opt.label, "approved_min": self.state.t_min,
                        "do_nothing_cost": rec.do_nothing_cost, "action_cost": opt.cost_breakdown.total,
                        "savings": round(rec.do_nothing_cost - (opt.cost_breakdown.total or 0), 2)}
+        self.ledger["saved"] += self.payoff["savings"]  # projected avoided cost vs do-nothing at approval time
+        self.ledger["action_fixed"] += opt.cost_breakdown.fixed
         self.log(Event(self.state.t_min, OPERATOR, "ACTION_APPROVED", None,
                        {"label": opt.label, "lead_min": opt.lead_time_min, "option": option_id}))
         self.last_advisory = None
@@ -264,7 +285,7 @@ class Session:
             "state": self.state_dict(),
             "forecast": {"tanks": self.forecast, "do_nothing": self.forecast_do_nothing,
                          "series_step_min": self.cfg.time.forecast_series_step_min, "as_of_min": self.state.t_min},
-            "payoff": self.payoff,
+            "payoff": self.payoff, "ledger": self.ledger_dict(),
         }
 
     def tick_message(self) -> dict:
