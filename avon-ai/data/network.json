@@ -1,0 +1,29 @@
+{
+  "_note": "Synthetic, illustrative topology. Not a model of any real facility.",
+  "nodes": [
+    {"id": "SRC-1", "type": "source", "label": "Source 1", "rate_bbl_hr": 180, "ui": {"col": 0, "row": 0.5}},
+    {"id": "SRC-2", "type": "source", "label": "Source 2", "rate_bbl_hr": 150, "ui": {"col": 0, "row": 3}},
+    {"id": "T-104", "type": "tank", "label": "T-104", "capacity_bbl": 1000, "initial_bbl": 600, "redundant_sensors": true, "ui": {"col": 1, "row": 0.5}},
+    {"id": "T-101", "type": "tank", "label": "T-101", "capacity_bbl": 1000, "initial_bbl": 500, "redundant_sensors": false, "ui": {"col": 1, "row": 3}},
+    {"id": "T-102", "type": "tank", "label": "T-102 (buffer)", "role": "buffer", "capacity_bbl": 1000, "initial_bbl": 400, "redundant_sensors": false, "ui": {"col": 1, "row": 4.5}},
+    {"id": "P-203", "type": "pump", "label": "P-203 (duty)", "role": "duty", "rated_flow_bbl_hr": 200, "ui": {"col": 2, "row": 0}},
+    {"id": "P-204", "type": "pump", "label": "P-204 (standby)", "role": "standby", "standby_for": "P-203", "rated_flow_bbl_hr": 200, "ui": {"col": 2, "row": 1.2}},
+    {"id": "P-201", "type": "pump", "label": "P-201 (duty)", "role": "duty", "rated_flow_bbl_hr": 200, "ui": {"col": 2, "row": 3}},
+    {"id": "PL-1", "type": "pipeline", "label": "PL-1", "max_flow_bbl_hr": 250, "ui": {"col": 3, "row": 0.6}},
+    {"id": "PL-2", "type": "pipeline", "label": "PL-2", "max_flow_bbl_hr": 250, "ui": {"col": 3, "row": 3}},
+    {"id": "TRT-1", "type": "treatment", "label": "TRT-1", "max_intake_bbl_hr": 400, "ui": {"col": 4, "row": 1.8}}
+  ],
+  "edges": [
+    {"from": "SRC-1", "to": "T-104", "kind": "flow"},
+    {"from": "SRC-2", "to": "T-101", "kind": "flow"},
+    {"from": "T-104", "to": "P-203", "kind": "flow"},
+    {"from": "T-104", "to": "P-204", "kind": "flow"},
+    {"from": "P-203", "to": "PL-1", "kind": "flow"},
+    {"from": "P-204", "to": "PL-1", "kind": "flow"},
+    {"from": "PL-1", "to": "TRT-1", "kind": "flow"},
+    {"from": "T-101", "to": "P-201", "kind": "flow"},
+    {"from": "P-201", "to": "PL-2", "kind": "flow"},
+    {"from": "PL-2", "to": "TRT-1", "kind": "flow"},
+    {"from": "T-101", "to": "T-102", "kind": "transfer"}
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "id": "scene3_backup_unavailable", "name": "3. Backup pump unavailable",
+  "description": "As scene 2, but P-204 is locked out. Recommendation re-ranks to the next-cheapest feasible option; P-204 is rejected with ASSET_UNAVAILABLE.",
+  "seed": 1, "decision_engine_enabled": true,
+  "initial": {"tanks": {"T-104": 880}},
+  "faults": [
+    {"id": "F-S3-1", "type": "PUMP_DEGRADE", "target": "P-203", "params": {"factor": 0.45, "ramp_min": 0}, "start_min": 0, "end_min": null},
+    {"id": "F-S3-2", "type": "PUMP_UNAVAILABLE", "target": "P-204", "params": {}, "start_min": 0, "end_min": null}
+  ]
+}

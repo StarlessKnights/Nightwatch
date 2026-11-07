@@ -1,0 +1,7 @@
+{
+  "id": "scene1_normal", "name": "1. Normal operation",
+  "description": "T-104 at 600 bbl, inflow 180, P-203 delivering 200. No risk; everything green.",
+  "seed": 1, "decision_engine_enabled": true,
+  "initial": {"tanks": {"T-104": 600}},
+  "faults": []
+}

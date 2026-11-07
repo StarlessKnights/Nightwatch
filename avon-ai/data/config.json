@@ -1,0 +1,23 @@
+{
+  "_note": "ALL VALUES ARE ILLUSTRATIVE. Standards (e.g. ISA-18.2, IEC 61511) are named only as inspiration; no compliance is claimed.",
+  "time": {"dt_min": 1, "horizon_min": 480, "forecast_series_step_min": 5},
+  "limits": {"LL": 50, "L": 100, "H": 900, "HH": 950, "deadband_bbl": 10, "on_delay_min": 1, "hh_reset_bbl": 800, "ll_reset_bbl": 100},
+  "interlock": {"enabled": true},
+  "control": {"standby_start_delay_min": 2, "auto_changeover_on_low_flow": false, "low_flow_pct": 70, "low_flow_duration_min": 3, "auto_stop_standby": true},
+  "sensors": {"disagree_tolerance_bbl": 40, "noise_bbl": 0.0},
+  "status": {"watch_min": 480, "warning_min": 120, "critical_min": 60, "predictive_alarm_min": 90, "predictive_deadband_min": 10},
+  "consequence": {"shutin_duration_h": 4, "production_value_per_bbl": 34, "restart_cost": 0, "spill_penalty": 100000},
+  "decision": {"operator_approval_buffer_min": 3, "min_margin_bbl": 25, "curtailment_options_pct": [10, 25, 50], "max_pair_options": 40},
+  "actions": {
+    "START_STANDBY_PUMP": {"fixed_cost": 50, "hourly_cost": 25},
+    "REDUCE_PRODUCTION": {"ramp_min": 10},
+    "DISPATCH_TRUCK": {"fixed_cost": 150, "cost_per_load": 75, "lead_time_min": 45, "cycle_min": 40, "load_bbl": 130, "max_loads": 6, "fleet": 2}
+  },
+  "ui": {
+    "disclaimer": "Simulated data. Recommendations require human approval.",
+    "speeds": [1, 10, 60],
+    "start_clock": "00:00",
+    "history_points": 720,
+    "ws_forecast_min_interval_s": 0.5
+  }
+}

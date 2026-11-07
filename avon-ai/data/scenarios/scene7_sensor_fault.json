@@ -1,0 +1,10 @@
+{
+  "id": "scene7_sensor_fault", "name": "7. Sensor fault (stretch)",
+  "description": "LT-104A sticks low at 400 bbl while the tank fills. Redundant transmitters disagree: the higher reading is used for high-level protection and a sensor alarm is raised.",
+  "seed": 1, "decision_engine_enabled": true,
+  "initial": {"tanks": {"T-104": 880}},
+  "faults": [
+    {"id": "F-S7-1", "type": "PUMP_DEGRADE", "target": "P-203", "params": {"factor": 0.45, "ramp_min": 0}, "start_min": 0, "end_min": null},
+    {"id": "F-S7-2", "type": "LEVEL_SENSOR_FAULT", "target": "T-104", "params": {"transmitter": "A", "mode": "stuck", "value": 400}, "start_min": 2, "end_min": null}
+  ]
+}
