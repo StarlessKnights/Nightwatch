@@ -65,6 +65,20 @@ def render_event(code: str, asset: str | None, params: dict) -> str:
         return code
 
 
+DIAGNOSIS_TEXT = {
+    "PUMP_WEAR": "Pump wear likely (w={w}, r={r})",
+    "RESTRICTION": "Pipeline restriction likely (r={r})",
+    "COMPOUND": "Pump wear and pipeline restriction likely (w={w}, r={r})",
+    "NONE": "No fault signature (w={w}, r={r})",
+    "FLOW_TOO_LOW": "Not enough flow to diagnose",
+}
+
+
+def diagnosis_text(code: str, w: float | None, r: float | None) -> str:
+    f = lambda x: "?" if x is None else f"{x:.2f}" if x < 2 else f"{x:.1f}"  # noqa: E731
+    return DIAGNOSIS_TEXT.get(code, code).format(w=f(w), r=f(r))
+
+
 def reason_text(code: str) -> str:
     return REASON_TEXT.get(code, code)
 

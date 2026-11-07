@@ -56,9 +56,12 @@ def test_determinism(topo, scene):
 
 def test_pipeline_restriction_rejects_pump_start(topo, scene):
     state, cfg = scene("scene2_pump_degraded")
-    state = replace(state, faults=state.faults + (fault("R", "PIPELINE_RESTRICTION", "PL-1", factor=0.3),))
+    state = replace(state, faults=(fault("R", "PIPELINE_RESTRICTION", "PL-1", r=9.9),))
     o = opts(recommend(state, topo, cfg))["START_STANDBY_PUMP:P-204"]
-    assert "PIPELINE_CAP_EXCEEDED" in o.reason_codes
+    assert not o.feasible and set(o.reason_codes) & {"STILL_REACHES_HH", "PIPELINE_CAP_EXCEEDED"}
+    rec = recommend(state, topo, cfg)
+    assert rec.best_option_id != "START_STANDBY_PUMP:P-204"
+    assert any(c.evidence_field == "diagnosis" and c.value == "RESTRICTION" for c in rec.probable_cause)
 
 
 def test_scene5_multi_tank_uses_pairs_and_flags_downstream(topo, scene):
@@ -81,9 +84,9 @@ def test_property_recommended_options_satisfy_hard_constraints(topo, cfg, scene)
     for i in range(12):
         fl = []
         if rnd.random() < .6:
-            fl.append(fault("a", "PUMP_DEGRADE", "P-203", factor=rnd.choice([.3, .45, .6])))
+            fl.append(fault("a", "PUMP_DEGRADE", "P-203", w=rnd.choice([.3, .45, .6])))
         if rnd.random() < .4:
-            fl.append(fault("b", "PIPELINE_RESTRICTION", "PL-1", factor=rnd.choice([.3, .5, .8])))
+            fl.append(fault("b", "PIPELINE_RESTRICTION", "PL-1", r=rnd.choice([2.0, 5.0, 9.9])))
         if rnd.random() < .4:
             fl.append(fault("c", "TREATMENT_CONSTRAINT", "TRT-1", factor=rnd.choice([.4, .6, .8])))
         if rnd.random() < .3:
@@ -101,8 +104,8 @@ def test_property_recommended_options_satisfy_hard_constraints(topo, cfg, scene)
             assert not any(traj.trips.values()) and not any(traj.overflow_events.values())
             assert max(max(v) for v in traj.volumes.values()) <= cfg.limits.HH - cfg.decision.min_margin_bbl + 1e-6
             for a in act.combo_from_id(oid):
-                eff = faults.effective(state, topo)
-                assert not act.preconditions(a, state, eff, topo, cfg, 1 / 60)
+                eff = faults.effective(state, topo, cfg)
+                assert not act.preconditions(a, state, eff, topo, cfg)
         # DO_NOTHING is always present as the reference row
         assert act.DO_NOTHING in opts(rec)
         costs = [opts(rec)[o].cost_breakdown.total for o in rec.ranked_option_ids]

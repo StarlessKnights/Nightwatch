@@ -8,7 +8,7 @@ const COL_W = 230
 const ROW_H = 120
 const FLOW_EPS = 0.5 // bbl/hr below which an edge is drawn as "no flow"
 
-type D = { node: any; env: Envelope; network: Network; dim: boolean }
+type D = { node: any; env: Envelope; network: Network; dim: boolean; onDetails?: (id: string) => void }
 
 const H = () => (
   <>
@@ -52,15 +52,25 @@ function TankNode({ data }: NodeProps<Node<D>>) {
   )
 }
 
+const DIAG_ICON: Record<string, string> = { PUMP_WEAR: '🔧', RESTRICTION: '🚧', COMPOUND: '⚠' }
+
 function PumpNode({ data }: NodeProps<Node<D>>) {
   const p = data.env.state.pumps[data.node.id]
   const cls = !p.available ? 'unavail' : p.run_state === 'RUNNING' ? 'running' : p.run_state === 'STARTING' ? 'starting' : p.run_state === 'TRIPPED' ? 'tripped' : 'stopped'
+  const d = p.diagnosis
   return (
     <div className={`nd pump-wrap ${data.dim ? 'dim' : ''}`}>
       <H />
-      <div className={`pump ${cls}`} title={`${p.run_state}${p.limited_by ? ` (limited by ${p.limited_by})` : ''}`}>{data.node.id.replace('P-', 'P')}</div>
+      <div className={`pump ${cls}`} title={`${p.run_state}${p.limited_by ? ` (limited by ${p.limited_by})` : ''} · double-click for detail`}>
+        {data.node.id.replace('P-', 'P')}
+        <button className="info nodrag" title="Pump detail" onClick={(e) => { e.stopPropagation(); data.onDetails?.(data.node.id) }}>ⓘ</button>
+      </div>
       <div className="sub">{!p.available ? 'UNAVAILABLE' : p.run_state === 'STOPPED' && p.role === 'standby' ? 'STANDBY' : p.run_state}</div>
-      {p.eff_capacity_factor < 0.995 && <div className="badge warn">{(p.eff_capacity_factor * 100).toFixed(0)}%</div>}
+      {d?.w_est != null && (
+        <div className={`badge ${d.code === 'NONE' ? '' : 'warn'}`} title={d.text}>
+          w {(d.w_est * 100).toFixed(0)}% {DIAG_ICON[d.code] ?? ''}
+        </div>
+      )}
       {p.auto_started && <div className="badge">AUTO</div>}
     </div>
   )
@@ -74,7 +84,7 @@ function PipeNode({ data }: NodeProps<Node<D>>) {
       <H />
       <b>{data.node.label}</b>
       <div className="sub">{p.flow.toFixed(0)} / {p.cap.toFixed(0)} bbl/hr</div>
-      {p.restriction_factor < 1 && <div className="badge warn">restricted {(p.restriction_factor * 100).toFixed(0)}%</div>}
+      {p.r > 1 && <div className="badge warn">restricted r={p.r.toFixed(1)}</div>}
     </div>
   )
 }
@@ -102,7 +112,7 @@ function edgeFlow(env: Envelope, from: string, to: string, fromKind: string): nu
   return 0
 }
 
-export function NetworkDiagram({ env, network }: { env: Envelope; network: Network }) {
+export function NetworkDiagram({ env, network, onPumpDetail }: { env: Envelope; network: Network; onPumpDetail: (id: string) => void }) {
   const [focus, setFocus] = useState<{ id: string; related: Set<string> } | null>(null)
   useEffect(() => { setFocus(null) }, [env.scenario.id])
 
@@ -112,7 +122,7 @@ export function NetworkDiagram({ env, network }: { env: Envelope; network: Netwo
   const nodes: Node<D>[] = network.topology.nodes.map((n) => ({
     id: n.id, type: n.type, draggable: false,
     position: { x: n.ui.col * COL_W, y: n.ui.row * ROW_H },
-    data: { node: n, env, network, dim: !inFocus(n.id) },
+    data: { node: n, env, network, dim: !inFocus(n.id), onDetails: onPumpDetail },
   }))
   const edges: Edge[] = network.topology.edges.map((e) => {
     const transfer = e.kind === 'transfer'
@@ -135,7 +145,8 @@ export function NetworkDiagram({ env, network }: { env: Envelope; network: Netwo
   return (
     <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.1 }}
       nodesConnectable={false} proOptions={{ hideAttribution: true }} onNodeClick={onClick} onPaneClick={() => setFocus(null)}
-      minZoom={0.3} colorMode="dark">
+      minZoom={0.3} colorMode="dark" zoomOnDoubleClick={false}
+      onNodeDoubleClick={(_, n) => { if (n.type === 'pump') onPumpDetail(n.id) }}>
       <Background gap={24} />
     </ReactFlow>
   )

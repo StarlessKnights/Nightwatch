@@ -24,7 +24,7 @@ def initial_state(topo: Topology, cfg: Config, initial: dict | None = None, scri
         o = pump_over.get(pid, {})
         pumps[pid] = PumpState(
             role=info.role, run_state=o.get("run_state", RUNNING if info.role == "duty" else STOPPED),
-            capacity_factor=o.get("capacity_factor", 1.0), available=o.get("available", True))
+            health=o.get("health", 1.0), available=o.get("available", True))
     for sid in topo.sources:
         rate = init.get("sources", {}).get(sid, topo.nodes[sid]["rate_bbl_hr"])
         sources[sid] = SourceState(float(rate))
@@ -97,7 +97,7 @@ def step(state: SimState, topo: Topology, cfg: Config, rng: np.random.Generator 
     events: list[Event] = []
 
     # 1. scheduled fault injections + pending action effects that are due
-    eff = faults.effective(state, topo)
+    eff = faults.effective(state, topo, cfg)
     s = state
     due = [p for p in s.pending_actions if p.effective_at_min <= t]
     if due:
@@ -124,8 +124,8 @@ def step(state: SimState, topo: Topology, cfg: Config, rng: np.random.Generator 
         topo,
         volumes={tid: ts.volume_bbl for tid, ts in s.tanks.items()},
         pump_on={p: ps.run_state == RUNNING and eff.pump_available[p] for p, ps in s.pumps.items()},
-        pump_cf=eff.pump_cf,
-        pipeline_cap={p: ps.max_flow * eff.pipeline_rf[p] for p, ps in s.pipelines.items()},
+        pump_w=eff.pump_w, pump_model_cfg=cfg.pump_model,
+        pipeline_cap={p: ps.max_flow for p, ps in s.pipelines.items()}, pipeline_r=eff.pipeline_r,
         treatment_cap={p: ps.max_intake * eff.treatment_if[p] for p, ps in s.treatment.items()},
         source_rate=src_rate, dt_h=dt_h, outflow_multiplier=outflow_multiplier,
     )
