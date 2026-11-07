@@ -1,13 +1,16 @@
 /**
- * AVON AI - 5-Node Edge Hardware Visualizer Firmware
+ * AVON AI - Physical Pump Node Firmware
  * PlatformIO project for Arduino UNO R4 WiFi
  * 
- * Drives the built-in 12x8 LED Matrix across 5 distinct plant assets:
- *   Device 1: Tank T-104 & Pumps P-203/P-204
- *   Device 2: Pipeline PL-1 (Upper Fluid Flow)
- *   Device 3: Treatment Facility TRT-1 (Intake Hub)
- *   Device 4: Tank T-101 & Pump P-201
- *   Device 5: Pipeline PL-2 (Lower Fluid Flow)
+ * Drives the built-in 12x8 LED Matrix as an active industrial pump:
+ *   - Suction Intake (Cols 0..2): Water particles flowing into the pump
+ *   - Centrifugal Impeller (Cols 3..8): 
+ *       * RUNNING: Rotating impeller vanes (fast spin)
+ *       * DEGRADED: Slow, labored rotation (wear / cavitation)
+ *       * STARTING: Pulsing center dot
+ *       * TRIPPED: Stationary with flashing red 'X'
+ *       * STOPPED: Idle / standby baseline
+ *   - Discharge Pipe (Cols 9..11): Water particles surging out at speed proportional to flow_bbl_hr
  */
 
 #include <Arduino.h>
@@ -15,7 +18,6 @@
 #include <ArduinoJson.h>
 #include "protocol.h"
 
-// 12x8 LED Matrix driver
 ArduinoLEDMatrix matrix;
 
 // Serial reception buffer
@@ -23,12 +25,18 @@ constexpr size_t SERIAL_BUF_LEN = 256;
 char rxBuffer[SERIAL_BUF_LEN];
 size_t rxIndex = 0;
 
-// Telemetry state instances for the 5 devices
-Tank104Telemetry tank104Data = {600.0f, 1000.0f, 180.0f, 200.0f, PUMP_RUNNING, 1.0f, PUMP_STOPPED, 1.0f, ALARM_NONE, false};
-PipelineTelemetry pipe1Data  = {200.0f, 250.0f, 1.0f, 1, 0};
-TreatmentTelemetry trtData   = {200.0f, 400.0f, 1.0f, 0};
-Tank101Telemetry tank101Data = {550.0f, 1000.0f, 200.0f, 200.0f, PUMP_RUNNING, 1.0f, ALARM_NONE, false};
-PipelineTelemetry pipe2Data  = {200.0f, 250.0f, 1.0f, 1, 0};
+// Current pump telemetry state
+PumpNodeTelemetry pump = {
+    DEVICE_ID,
+    0,
+    PUMP_STATE_RUNNING, // default running for self-test
+    200.0f,             // 200 bbl/hr
+    200.0f,
+    1.0f,
+    LIMIT_NONE,
+    ALARM_NONE,
+    false
+};
 
 // Timing variables
 unsigned long lastPacketTime = 0;
@@ -36,7 +44,7 @@ unsigned long lastAnimUpdate = 0;
 unsigned long lastHeartbeat = 0;
 uint8_t animFrame = 0;
 
-// 12x8 Framebuffer (8 rows x 12 cols)
+// 12x8 Framebuffer
 uint8_t frameBuffer[MATRIX_ROWS][MATRIX_COLS];
 
 void renderFrameBuffer() {
@@ -59,175 +67,110 @@ void clearBuffer() {
 }
 
 // -------------------------------------------------------------
-// WATERFLOW PIPELINE RENDERER (Devices 2 & 5)
+// PUMP MATRIX RENDERER
 // -------------------------------------------------------------
-void renderPipelineFlow(const PipelineTelemetry& pipe) {
+void renderPump() {
     clearBuffer();
 
-    float flow = pipe.flow_bbl_hr;
-    
-    // Top and bottom pipe boundaries
-    for (int c = 0; c < MATRIX_COLS; c++) {
-        frameBuffer[0][c] = 1;
-        frameBuffer[7][c] = 1;
+    bool is_flowing = (pump.state == PUMP_STATE_RUNNING || pump.state == PUMP_STATE_DEGRADED) && pump.flow_bbl_hr > 1.0f;
+
+    // 1. Pipe boundaries (Top row 1 and Bottom row 6 on suction/discharge)
+    frameBuffer[1][0] = 1; frameBuffer[1][1] = 1; frameBuffer[1][2] = 1; // Suction top
+    frameBuffer[6][0] = 1; frameBuffer[6][1] = 1; frameBuffer[6][2] = 1; // Suction bottom
+    frameBuffer[1][9] = 1; frameBuffer[1][10] = 1; frameBuffer[1][11] = 1; // Discharge top
+    frameBuffer[6][9] = 1; frameBuffer[6][10] = 1; frameBuffer[6][11] = 1; // Discharge bottom
+
+    // 2. Pump Casing / Volute (Cols 3..8, Rows 0..7)
+    frameBuffer[0][5] = 1; frameBuffer[0][6] = 1; // Top casing
+    frameBuffer[7][5] = 1; frameBuffer[7][6] = 1; // Bottom casing
+    frameBuffer[1][4] = 1; frameBuffer[1][7] = 1;
+    frameBuffer[6][4] = 1; frameBuffer[6][7] = 1;
+    frameBuffer[2][3] = 1; frameBuffer[5][3] = 1;
+    frameBuffer[2][8] = 1; frameBuffer[5][8] = 1;
+
+    // 3. Suction Water Particles (Cols 0..2, Rows 3..4)
+    if (is_flowing) {
+        int suctionStep = animFrame % 3;
+        frameBuffer[3][suctionStep] = 1;
+        frameBuffer[4][suctionStep] = 1;
     }
 
-    if (flow <= 1.0f || pipe.direction == 0) {
-        // Zero flow / Tripped state: static centered dashes
-        for (int c = 2; c < 10; c += 3) {
-            frameBuffer[3][c] = 1;
-            frameBuffer[4][c] = 1;
+    // 4. Central Impeller / Rotor Mechanism (Cols 4..7, Rows 2..5)
+    if (pump.state == PUMP_STATE_RUNNING || pump.state == PUMP_STATE_DEGRADED) {
+        // Rotating impeller vanes
+        int rotStep = animFrame % 4;
+        frameBuffer[3][5] = 1; frameBuffer[3][6] = 1; // Center hub
+        frameBuffer[4][5] = 1; frameBuffer[4][6] = 1;
+
+        if (rotStep == 0) {
+            // Horizontal vane (+)
+            frameBuffer[3][4] = 1; frameBuffer[4][4] = 1;
+            frameBuffer[3][7] = 1; frameBuffer[4][7] = 1;
+        } else if (rotStep == 1) {
+            // Diagonal vane (\)
+            frameBuffer[2][4] = 1; frameBuffer[5][7] = 1;
+        } else if (rotStep == 2) {
+            // Vertical vane (|)
+            frameBuffer[2][5] = 1; frameBuffer[2][6] = 1;
+            frameBuffer[5][5] = 1; frameBuffer[5][6] = 1;
+        } else {
+            // Diagonal vane (/)
+            frameBuffer[2][7] = 1; frameBuffer[5][4] = 1;
         }
-        renderFrameBuffer();
-        return;
-    }
-
-    // Directional cascading chevrons: >> >> >>
-    for (int col = 0; col < MATRIX_COLS; col++) {
-        int virtualCol = (col - animFrame + MATRIX_COLS * 4) % 4;
-        
-        if (pipe.direction > 0) { // Forward flow
-            if (virtualCol == 0) {
-                frameBuffer[2][col] = 1; frameBuffer[3][col] = 1;
-                frameBuffer[4][col] = 1; frameBuffer[5][col] = 1;
-            } else if (virtualCol == 1) {
-                frameBuffer[1][col] = 1; frameBuffer[6][col] = 1;
-            }
-        } else { // Backpressure / reverse flow
-            if (virtualCol == 2) {
-                frameBuffer[2][col] = 1; frameBuffer[3][col] = 1;
-                frameBuffer[4][col] = 1; frameBuffer[5][col] = 1;
-            } else if (virtualCol == 1) {
-                frameBuffer[1][col] = 1; frameBuffer[6][col] = 1;
-            }
+    } else if (pump.state == PUMP_STATE_TRIPPED) {
+        // Pump TRIPPED: Draw large 'X' inside casing
+        frameBuffer[2][4] = 1; frameBuffer[2][7] = 1;
+        frameBuffer[3][5] = 1; frameBuffer[3][6] = 1;
+        frameBuffer[4][5] = 1; frameBuffer[4][6] = 1;
+        frameBuffer[5][4] = 1; frameBuffer[5][7] = 1;
+    } else if (pump.state == PUMP_STATE_STARTING) {
+        // Pump STARTING: Pulsing center dot
+        if ((animFrame % 2) == 0) {
+            frameBuffer[3][5] = 1; frameBuffer[3][6] = 1;
+            frameBuffer[4][5] = 1; frameBuffer[4][6] = 1;
         }
+    } else if (pump.state == PUMP_STATE_UNAVAILABLE) {
+        // UNAVAILABLE / Lockout: Diagonal slash
+        frameBuffer[2][4] = 1; frameBuffer[3][5] = 1;
+        frameBuffer[4][6] = 1; frameBuffer[5][7] = 1;
+    } else {
+        // STOPPED / Standby idle: Stationary plus cross
+        frameBuffer[3][5] = 1; frameBuffer[4][6] = 1;
     }
 
-    // Restriction bottleneck indicator (if throttled)
-    if (pipe.restriction_factor < 0.95f) {
-        frameBuffer[1][5] = 1; frameBuffer[2][5] = 1; frameBuffer[5][5] = 1; frameBuffer[6][5] = 1;
-        frameBuffer[1][6] = 1; frameBuffer[2][6] = 1; frameBuffer[5][6] = 1; frameBuffer[6][6] = 1;
+    // 5. Discharge Waterflow (Cols 9..11, Rows 3..4)
+    if (is_flowing) {
+        int dischargeStep = (animFrame % 3) + 9;
+        frameBuffer[3][dischargeStep] = 1;
+        frameBuffer[4][dischargeStep] = 1;
     }
 
-    renderFrameBuffer();
-}
-
-// -------------------------------------------------------------
-// TANK T-104 & DUAL PUMPS RENDERER (Device 1)
-// -------------------------------------------------------------
-void renderTank104() {
-    clearBuffer();
-
-    // 1. Tank Fill Bar (Cols 0..3, Rows 0..7)
-    int fillRows = map((int)constrain(tank104Data.level_bbl, 0, 1000), 0, 1000, 0, 8);
-    for (int r = 0; r < fillRows; r++) {
-        int targetRow = 7 - r;
-        for (int c = 0; c < 4; c++) frameBuffer[targetRow][c] = 1;
-    }
-
-    // Alarm flash at HH limit
-    if (tank104Data.level_bbl >= 900.0f && (animFrame % 2 == 0)) {
-        frameBuffer[0][0] = 0; frameBuffer[0][3] = 0;
-    }
-
-    // 2. Duty Pump P-203 (Cols 6..9, Rows 1..3)
-    if (tank104Data.p203_state == PUMP_RUNNING) {
-        frameBuffer[2][7] = 1; frameBuffer[2][8] = 1;
-        if (animFrame % 2 == 0) { frameBuffer[1][7] = 1; frameBuffer[3][8] = 1; }
-        else                    { frameBuffer[3][7] = 1; frameBuffer[1][8] = 1; }
-    } else if (tank104Data.p203_state == PUMP_TRIPPED) {
-        frameBuffer[1][7] = 1; frameBuffer[1][9] = 1; frameBuffer[2][8] = 1;
-        frameBuffer[3][7] = 1; frameBuffer[3][9] = 1; // 'X'
-    }
-
-    // 3. Standby Pump P-204 (Cols 6..9, Rows 5..7)
-    if (tank104Data.p204_state == PUMP_RUNNING) {
-        frameBuffer[6][7] = 1; frameBuffer[6][8] = 1;
-        if (animFrame % 2 == 0) { frameBuffer[5][7] = 1; frameBuffer[7][8] = 1; }
-        else                    { frameBuffer[7][7] = 1; frameBuffer[5][8] = 1; }
-    } else if (tank104Data.p204_state == PUMP_STARTING) {
-        if (animFrame % 2 == 0) frameBuffer[6][8] = 1; // Pulsing
+    // 6. Alarm / Interlock Warning Flasher (Corners)
+    if ((pump.alarm_level >= 2 || pump.interlock_shut_in) && (animFrame % 2 == 0)) {
+        frameBuffer[0][0] = 1; frameBuffer[0][11] = 1;
+        frameBuffer[7][0] = 1; frameBuffer[7][11] = 1;
     }
 
     renderFrameBuffer();
 }
 
-// -------------------------------------------------------------
-// TANK T-101 & P-201 RENDERER (Device 4)
-// -------------------------------------------------------------
-void renderTank101() {
-    clearBuffer();
-
-    // 1. Tank Fill Bar (Cols 0..3, Rows 0..7)
-    int fillRows = map((int)constrain(tank101Data.level_bbl, 0, 1000), 0, 1000, 0, 8);
-    for (int r = 0; r < fillRows; r++) {
-        int targetRow = 7 - r;
-        for (int c = 0; c < 4; c++) frameBuffer[targetRow][c] = 1;
-    }
-
-    // 2. Pump P-201 (Cols 6..9, Rows 3..5)
-    if (tank101Data.p201_state == PUMP_RUNNING) {
-        frameBuffer[4][7] = 1; frameBuffer[4][8] = 1;
-        if (animFrame % 2 == 0) { frameBuffer[3][7] = 1; frameBuffer[5][8] = 1; }
-        else                    { frameBuffer[5][7] = 1; frameBuffer[3][8] = 1; }
-    } else if (tank101Data.p201_state == PUMP_TRIPPED) {
-        frameBuffer[3][7] = 1; frameBuffer[3][9] = 1; frameBuffer[4][8] = 1;
-        frameBuffer[5][7] = 1; frameBuffer[5][9] = 1;
-    }
-
-    renderFrameBuffer();
-}
-
-// -------------------------------------------------------------
-// TREATMENT FACILITY TRT-1 RENDERER (Device 3)
-// -------------------------------------------------------------
-void renderTreatment() {
-    clearBuffer();
-
-    // Swirling intake vortex
-    int centerCol = 6;
-    int centerRow = 4;
-    int step = animFrame % 4;
-
-    switch (step) {
-        case 0: frameBuffer[centerRow - 1][centerCol] = 1; frameBuffer[centerRow][centerCol + 1] = 1; break;
-        case 1: frameBuffer[centerRow][centerCol + 1] = 1; frameBuffer[centerRow + 1][centerCol] = 1; break;
-        case 2: frameBuffer[centerRow + 1][centerCol] = 1; frameBuffer[centerRow][centerCol - 1] = 1; break;
-        case 3: frameBuffer[centerRow][centerCol - 1] = 1; frameBuffer[centerRow - 1][centerCol] = 1; break;
-    }
-
-    // Outer boundary walls
-    for (int r = 1; r < 7; r++) {
-        frameBuffer[r][1] = 1;
-        frameBuffer[r][10] = 1;
-    }
-
-    // Flashing constraint alert
-    if (trtData.intake_factor < 0.95f && (animFrame % 2 == 0)) {
-        frameBuffer[0][5] = 1; frameBuffer[0][6] = 1;
-        frameBuffer[7][5] = 1; frameBuffer[7][6] = 1;
-    }
-
-    renderFrameBuffer();
-}
-
-// Dynamic frame delay calculation
+// Calculate animation speed based on flow rate and pump state
 unsigned long calculateFrameDelay() {
-#if DEVICE_ID == 2
-    float flow = pipe1Data.flow_bbl_hr;
-    if (flow <= 1.0f) return 500;
-    long delayVal = 320 - (long)((flow / 250.0f) * 280.0f);
-    return (unsigned long)constrain(delayVal, 35, 320);
-#elif DEVICE_ID == 5
-    float flow = pipe2Data.flow_bbl_hr;
-    if (flow <= 1.0f) return 500;
-    long delayVal = 320 - (long)((flow / 250.0f) * 280.0f);
-    return (unsigned long)constrain(delayVal, 35, 320);
-#elif DEVICE_ID == 1 || DEVICE_ID == 4
-    return 150;
-#else
-    return 120;
-#endif
+    if (pump.state == PUMP_STATE_STOPPED || pump.state == PUMP_STATE_TRIPPED) {
+        return 400; // Slow pulse for alarms
+    }
+    if (pump.state == PUMP_STATE_STARTING) {
+        return 200; // Fast pulsing while starting
+    }
+    if (pump.state == PUMP_STATE_DEGRADED) {
+        return 180; // Labored, slower rotation for degraded pump
+    }
+
+    // Running: dynamically scale delay from 160ms (low flow) to 45ms (max flow 200 bbl/hr)
+    float flow = pump.flow_bbl_hr;
+    if (flow <= 1.0f) return 300;
+    long delayVal = 200 - (long)((flow / 250.0f) * 155.0f);
+    return (unsigned long)constrain(delayVal, 40, 200);
 }
 
 void processJsonPacket(const char* jsonStr) {
@@ -235,44 +178,43 @@ void processJsonPacket(const char* jsonStr) {
     DeserializationError err = deserializeJson(doc, jsonStr);
     if (err) return;
 
-    int dev = doc["dev"] | 0;
+    int dev = doc["dev"] | doc["dev_id"] | 0;
     if (dev != 0 && dev != DEVICE_ID) return;
 
     lastPacketTime = millis();
 
-#if DEVICE_ID == 1
-    tank104Data.level_bbl = doc["lvl"] | tank104Data.level_bbl;
-    tank104Data.p203_state = doc["p203"]["state"] | tank104Data.p203_state;
-    tank104Data.p203_cf = doc["p203"]["cf"] | tank104Data.p203_cf;
-    tank104Data.p204_state = doc["p204"]["state"] | tank104Data.p204_state;
-    tank104Data.p204_cf = doc["p204"]["cf"] | tank104Data.p204_cf;
-    tank104Data.alarm_level = doc["alarm"] | tank104Data.alarm_level;
-    tank104Data.interlock_tripped = (doc["interlock"] | 0) != 0;
+    // Supports both compact Manas v1 format and verbose schema
+    pump.seq = doc["seq"] | pump.seq;
+    
+    // State parsing
+    if (doc.containsKey("state")) {
+        pump.state = doc["state"];
+    } else if (doc.containsKey("p1")) {
+        pump.state = doc["p1"];
+    }
 
-#elif DEVICE_ID == 2
-    pipe1Data.flow_bbl_hr = doc["flow"] | pipe1Data.flow_bbl_hr;
-    pipe1Data.restriction_factor = doc["restr"] | pipe1Data.restriction_factor;
-    pipe1Data.direction = doc["dir"] | pipe1Data.direction;
-    pipe1Data.alarm = doc["alarm"] | pipe1Data.alarm;
+    // Flow parsing
+    if (doc.containsKey("flow")) {
+        pump.flow_bbl_hr = doc["flow"];
+    } else if (doc.containsKey("flow_bbl_hr")) {
+        pump.flow_bbl_hr = doc["flow_bbl_hr"];
+    }
 
-#elif DEVICE_ID == 3
-    trtData.flow_bbl_hr = doc["flow"] | trtData.flow_bbl_hr;
-    trtData.intake_factor = doc["intake_factor"] | trtData.intake_factor;
-    trtData.alarm = doc["alarm"] | trtData.alarm;
+    // Rated capacity
+    if (doc.containsKey("max")) pump.rated_flow_bbl_hr = doc["max"];
+    if (doc.containsKey("cap")) pump.rated_flow_bbl_hr = doc["cap"];
 
-#elif DEVICE_ID == 4
-    tank101Data.level_bbl = doc["lvl"] | tank101Data.level_bbl;
-    tank101Data.p201_state = doc["p201"]["state"] | tank101Data.p201_state;
-    tank101Data.p201_cf = doc["p201"]["cf"] | tank101Data.p201_cf;
-    tank101Data.alarm_level = doc["alarm"] | tank101Data.alarm_level;
-    tank101Data.interlock_tripped = (doc["interlock"] | 0) != 0;
+    // Capacity factor (Manas protocol sends rf/tf in thousandths e.g. 1000 = 1.0)
+    if (doc.containsKey("cf")) {
+        pump.capacity_factor = doc["cf"];
+    } else if (doc.containsKey("rf")) {
+        pump.capacity_factor = (float)(doc["rf"]) / 1000.0f;
+    }
 
-#elif DEVICE_ID == 5
-    pipe2Data.flow_bbl_hr = doc["flow"] | pipe2Data.flow_bbl_hr;
-    pipe2Data.restriction_factor = doc["restr"] | pipe2Data.restriction_factor;
-    pipe2Data.direction = doc["dir"] | pipe2Data.direction;
-    pipe2Data.alarm = doc["alarm"] | pipe2Data.alarm;
-#endif
+    // Limiting cause & alarms
+    if (doc.containsKey("lim")) pump.limiting_cause = doc["lim"];
+    if (doc.containsKey("al")) pump.alarm_level = doc["al"];
+    if (doc.containsKey("il")) pump.interlock_shut_in = ((doc["il"] | 0) != 0);
 }
 
 void setup() {
@@ -282,6 +224,11 @@ void setup() {
     clearBuffer();
     renderFrameBuffer();
     lastPacketTime = millis();
+
+    // Emit Manas hello greeting
+    Serial.print("AVON|HELLO|v=1|dev=");
+    Serial.print(DEVICE_ID);
+    Serial.println("|profile=PUMP|fw=0.2.0");
 }
 
 void loop() {
@@ -300,12 +247,10 @@ void loop() {
         }
     }
 
-    // Fallback demo if disconnected for > 6s
-    if (millis() - lastPacketTime > 6000) {
-        pipe1Data.flow_bbl_hr = 180.0f; pipe1Data.direction = 1;
-        pipe2Data.flow_bbl_hr = 180.0f; pipe2Data.direction = 1;
-        tank104Data.level_bbl = 750.0f;
-        tank101Data.level_bbl = 650.0f;
+    // Fallback demo if disconnected for > 5s
+    if (millis() - lastPacketTime > 5000) {
+        pump.state = PUMP_STATE_RUNNING;
+        pump.flow_bbl_hr = 200.0f;
     }
 
     // Frame refresh
@@ -313,18 +258,7 @@ void loop() {
     if (millis() - lastAnimUpdate >= interval) {
         lastAnimUpdate = millis();
         animFrame++;
-
-#if DEVICE_ID == 1
-        renderTank104();
-#elif DEVICE_ID == 2
-        renderPipelineFlow(pipe1Data);
-#elif DEVICE_ID == 3
-        renderTreatment();
-#elif DEVICE_ID == 4
-        renderTank101();
-#elif DEVICE_ID == 5
-        renderPipelineFlow(pipe2Data);
-#endif
+        renderPump();
     }
 
     // Heartbeat

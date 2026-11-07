@@ -1,91 +1,103 @@
-# AVON AI — Hardware Gateway & Edge Control Subsystem (5-Node Visualizer Network)
+# AVON AI — Hardware Gateway & Edge Subsystem (5-Pump Network)
 
-This directory contains the fault-tolerant serial gateway, operator control deck, and developer tools for connecting **5 physical Arduino UNO R4 WiFi** microcontrollers with 12×8 LED matrices to the **AVON AI** produced-water network.
+This directory contains the fault-tolerant serial gateway, operator control deck, and developer tools for connecting **5 physical Arduino UNO R4 WiFi** microcontrollers with 12×8 LED matrices acting as **active physical pumps** in the **AVON AI** produced-water network.
 
 All controls and the display kiosk run directly on the host computer.
 
 ---
 
-## Physical Network Layout (The Presentation Table)
+## Physical Network Layout (The 5 Physical Pumps)
 
-The 5 Arduinos map directly to the plant network topology:
+Each Arduino represents a physical pump on the presentation table:
 
 ```
-[ Arduino #4: Tank T-101 & P-201 ] ===> [ Arduino #5: Pipeline PL-2 ] ──┐
-                                                                        ├──> [ Arduino #3: Treatment TRT-1 ]
-[ Arduino #1: Tank T-104 & Pumps ] ===> [ Arduino #2: Pipeline PL-1 ] ──┘
+[ P-SRC1: Arduino #4 ] ──> (Tank T-104) ──> [ P-203 Duty: Arduino #1 ] ──┐
+                                       └──> [ P-204 Sby:  Arduino #2 ] ──┼──> (Treatment)
+[ P-SRC2: Arduino #5 ] ──> (Tank T-101) ──> [ P-201 Duty: Arduino #3 ] ──┘
 ```
 
-| Unit | Plant Asset | Matrix Visual Function |
-|---|---|---|
-| **Arduino #1** | **Tank T-104 & Pumps (P-203/P-204)** | Level fill bar (0–1000 bbl), H/HH alarms, duty/standby pump status |
-| **Arduino #2** | **Pipeline PL-1** | Dynamic fluid flow wave (speed $\propto$ PL-1 flow 0–250 bbl/hr) |
-| **Arduino #3** | **Treatment TRT-1** | Swirling intake vortex (0–400 bbl/hr) & backpressure constraint alert |
-| **Arduino #4** | **Tank T-101 & Pump P-201** | Level fill bar (0–1000 bbl), H/HH alarms, P-201 pump status |
-| **Arduino #5** | **Pipeline PL-2** | Dynamic fluid flow wave (speed $\propto$ PL-2 flow 0–250 bbl/hr) |
+| Arduino Unit | Pump Tag | Role | Plant Subsystem |
+|---|---|---|---|
+| **Arduino #1** | **P-203** | Primary Duty Outflow Pump | Tank T-104 $\rightarrow$ Pipeline PL-1 |
+| **Arduino #2** | **P-204** | Redundant Standby Pump | Tank T-104 (Auto-changeover standby) |
+| **Arduino #3** | **P-201** | Primary Duty Outflow Pump | Tank T-101 $\rightarrow$ Pipeline PL-2 |
+| **Arduino #4** | **P-SRC1** | Wellhead Inflow Lift Pump 1 | Wellhead Source 1 $\rightarrow$ Tank T-104 (HH Shut-in) |
+| **Arduino #5** | **P-SRC2** | Wellhead Inflow Lift Pump 2 | Wellhead Source 2 $\rightarrow$ Tank T-101 (HH Shut-in) |
 
 ---
 
-## Physical Fault Tolerance (Hot-Plug & Disconnect Resilience)
+## 12×8 LED Matrix Pump Animations
 
-Industrial plants cannot afford for one peripheral bus failure to stall the entire plant. `bridge.py` implements:
-1. **Per-Channel Isolation:** Each Arduino has its own independent serial channel. If an Arduino is unplugged mid-run, its write error is caught immediately without blocking or lagging the other 4 Arduinos.
-2. **Non-Blocking Auto-Reconnect:** When an unplugged Arduino is reconnected to USB, the gateway automatically discovers and rebinds to it within 3 seconds, resuming real-time telemetry.
-3. **Firmware Autonomous Fallback:** If an Arduino is severed from serial data, its firmware falls back to an autonomous local display mode so the matrix never freezes into an unreadable state.
-
----
-
-## Directory Structure
-
-```
-hardware_gateway/
-  bridge.py                   # Fault-tolerant WebSocket-to-5x-Serial dispatcher
-  control_deck.py             # Computer keyboard control deck (Trip, Degrade, Approve, Reset)
-  config.json                 # COM port assignments and network endpoints
-  PROTOCOL.md                 # Packet specification (Manas v1 contract compatible)
-  README.md                   # This documentation
-  requirements-hw.txt         # Dependencies (pyserial, websockets, requests, colorama)
-
-  tools/                      # Developer testing tools
-    test_feeder.py            # Standalone CLI feeder to test any of the 5 matrices
-    mock_serial_bridge.py     # Virtual serial loopback monitor
-
-  firmware_reference/         # PlatformIO reference firmware scaffold
-```
+Each Arduino displays:
+1. **Suction Pipe (Left):** Water particles streaming into the pump casing.
+2. **Impeller Rotor (Center):** 
+   - **RUNNING:** Fast, smooth 4-frame rotating impeller vanes.
+   - **DEGRADED:** Slow, labored rotation (indicating cavitation / wear).
+   - **STARTING:** Pulsing center hub during auto-start delay.
+   - **TRIPPED:** Large flashing red `X` with stationary impeller.
+   - **STOPPED:** Idle baseline cross.
+3. **Discharge Pipe (Right):** Water surging out at speed directly proportional to `flow_bbl_hr`.
 
 ---
 
-## How to Run the Demo on Your Computer
+## Physical Fault Tolerance (Disconnect & Hot-Plug Resilience)
 
-### Step 1: Start AVON AI Backend & Frontend (on your computer)
+- **Isolated Channels:** Each pump has its own independent serial port. If any Arduino is unplugged, the other 4 pumps keep running without a glitch.
+- **Auto-Reconnect:** When plugged back in, the bridge rebinds automatically within 3 seconds.
+- **Autonomous Fallback:** If disconnected from USB data, each board runs an autonomous demo pattern so the LED matrix never turns off or glitched.
+
+---
+
+## How to Flash the 5 Pumps with PlatformIO
+
+Plug an Arduino into USB, navigate to `hardware_gateway/firmware_reference`:
+
+```powershell
+cd avon-ai\hardware_gateway\firmware_reference
+
+# Flash Pump 1 (P-203 Duty)
+pio run -e uno_r4_pump1 -t upload
+
+# Flash Pump 2 (P-204 Standby)
+pio run -e uno_r4_pump2 -t upload
+
+# Flash Pump 3 (P-201 Duty)
+pio run -e uno_r4_pump3 -t upload
+
+# Flash Pump 4 (P-SRC1 Inflow 1)
+pio run -e uno_r4_pump4 -t upload
+
+# Flash Pump 5 (P-SRC2 Inflow 2)
+pio run -e uno_r4_pump5 -t upload
+```
+
+---
+
+## How to Run the Live System
+
+### Step 1: Start AVON AI Backend & Frontend
 ```powershell
 # Terminal 1: Backend
 cd avon-ai\backend
 py -m uvicorn app.main:app --port 8080
 
-# Terminal 2: Frontend (Kiosk view in your browser @ http://localhost:5173)
+# Terminal 2: Frontend (Kiosk view in browser @ http://localhost:5173)
 cd avon-ai\frontend
 npm run dev
 ```
 
-### Step 2: Plug in the 5 Arduinos
-Plug the 5 Arduinos into your computer's USB ports (or a USB hub).
-Check their COM ports in [`hardware_gateway/config.json`](config.json) (e.g. `COM3` through `COM7`).
-
-### Step 3: Start the Gateway Bridge
+### Step 2: Start the Fault-Tolerant Bridge
 ```powershell
 cd avon-ai
 py hardware_gateway/bridge.py --config hardware_gateway/config.json
 ```
 *(Add `--dry-run` to test before plugging in Arduinos).*
 
-### Step 4: Open the Operator Control Deck
-In another terminal, run:
+### Step 3: Open the Operator Control Deck
 ```powershell
 cd avon-ai
 py hardware_gateway/control_deck.py
 ```
-- Press `t` to trip P-203 duty pump (Layer 2 auto-starts standby P-204).
-- Press `d` to degrade P-203 to 45% (AVON AI recommends starting P-204).
-- Press `a` to **Approve** the recommendation.
-- Press `c` to constrain Treatment TRT-1 to 50% (both pipelines throttle).
+- `t`: Trip P-203 duty pump (Watch Arduino 1 show 'X', then Arduino 2 standby auto-start after delay!).
+- `d`: Degrade P-203 to 45% (Watch Arduino 1 impeller slow down).
+- `a`: **Approve** recommendation (Watch Arduino 2 spin up to full capacity).

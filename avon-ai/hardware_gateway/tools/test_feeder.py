@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 """
-AVON AI - Arduino 5-Node Hardware Test Feeder
-Standalone tool for Person B to test 12x8 LED Matrix animations on any of the 5 Arduinos
-without needing the full backend/frontend running.
+AVON AI - Physical Pump Test Feeder
+Standalone tool to test the 12x8 LED Matrix pump animations on any of the 5 Arduinos.
 
 Usage:
-    python hardware/tools/test_feeder.py --port COM3 --device 2 --interactive
-    python hardware/tools/test_feeder.py --scenario degrade --device 2
+    py hardware_gateway/tools/test_feeder.py --device 1 --interactive
+    py hardware_gateway/tools/test_feeder.py --device 1 --scenario trip
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 import time
 
@@ -23,34 +21,33 @@ try:
 except ImportError:
     HAS_SERIAL = False
 
+PUMP_NAMES = {
+    1: "P-203 (Duty T-104)",
+    2: "P-204 (Standby T-104)",
+    3: "P-201 (Duty T-101)",
+    4: "P-SRC1 (Wellhead Inflow 1)",
+    5: "P-SRC2 (Wellhead Inflow 2)"
+}
 
-def print_ascii_matrix_preview(flow: float, frame: int, dev_id: int) -> None:
+
+def print_pump_ascii_preview(pump_name: str, state: int, flow: float, frame: int) -> None:
     print("\033[H\033[J", end="")
-    role_name = "Pipeline PL-1" if dev_id == 2 else ("Pipeline PL-2" if dev_id == 5 else f"Device {dev_id}")
-    print(f"=== 12x8 LED Matrix Preview ({role_name} @ {flow:.1f} bbl/hr) ===")
-    
-    lines = []
-    lines.append("+------------+")
-    for r in range(1, 7):
-        row_str = "|"
-        for c in range(12):
-            if flow <= 1.0:
-                row_str += "-" if r in (3, 4) and c in (3, 4, 7, 8) else " "
-            else:
-                val = math.sin((c - frame * 0.8) * 0.9)
-                if r in (3, 4) and val > 0.0:
-                    row_str += ">"
-                elif r in (2, 5) and val > 0.5:
-                    row_str += "~"
-                else:
-                    row_str += " "
-        row_str += "|"
-        lines.append(row_str)
-    lines.append("+------------+")
-    
+    state_labels = ["STOPPED", "RUNNING", "STARTING", "DEGRADED", "TRIPPED", "UNAVAILABLE"]
+    st_name = state_labels[state] if state < len(state_labels) else "UNKNOWN"
+
+    print(f"=== Pump Matrix Preview ({pump_name}) ===")
+    print(f"State: {st_name} | Flow: {flow:.1f} bbl/hr\n")
+
+    rotStep = frame % 4
+    lines = [
+        "   +------+   ",
+        "===|  {}  |===".format("/\\" if rotStep % 2 == 0 else "||"),
+        " > | ({}) | > ".format("X" if state == 4 else ("O" if rotStep == 0 else ("/" if rotStep == 1 else ("|" if rotStep == 2 else "\\")))),
+        " > | ({}) | > ".format("X" if state == 4 else ("O" if rotStep == 0 else ("/" if rotStep == 1 else ("|" if rotStep == 2 else "\\")))),
+        "===|  {}  |===".format("\\/" if rotStep % 2 == 0 else "||"),
+        "   +------+   "
+    ]
     print("\n".join(lines))
-    delay_ms = 500 if flow <= 1 else max(35, min(320, int(320 - (flow / 250.0) * 280)))
-    print(f"Device: {dev_id} | Delay: {delay_ms} ms | State: {'FROZEN' if flow <= 1 else 'FLOWING'}")
 
 
 def send_packet(ser, payload: dict, dev_id: int) -> None:
@@ -71,21 +68,21 @@ def run_interactive(port_name: str | None, baud: int, target_dev: int) -> None:
             ser = serial.Serial(port_name, baud, timeout=0.1)
             print(f"Connected to Arduino on {port_name} @ {baud}")
         except Exception as e:
-            print(f"Could not open {port_name}: {e}. Running in terminal preview mode.")
+            print(f"Could not open {port_name}: {e}. Running in preview mode.")
 
     flow = 200.0
-    level = 650.0
+    state = 1 # Running
     frame = 0
-    running = True
+    pname = PUMP_NAMES.get(target_dev, f"Pump {target_dev}")
 
-    print(f"\nControls for Device {target_dev}:")
+    print(f"\nControls for {pname}:")
+    print("  [1] Set state to RUNNING (200 bbl/hr, full speed spin)")
+    print("  [2] Set state to STARTING (pulsing)")
+    print("  [3] Set state to DEGRADED (90 bbl/hr, labored spin)")
+    print("  [4] Set state to TRIPPED (0 bbl/hr, flashing 'X')")
+    print("  [0] Set state to STOPPED (0 bbl/hr, idle)")
     print("  [+] Increase flow rate (+20 bbl/hr)")
     print("  [-] Decrease flow rate (-20 bbl/hr)")
-    print("  [0] Zero flow (0 bbl/hr)")
-    print("  [1] Degraded flow (90 bbl/hr)")
-    print("  [2] Normal flow (200 bbl/hr)")
-    print("  [3] Max flow (250 bbl/hr)")
-    print("  [h] Toggle High-High Alarm (level 955 bbl)")
     print("  [q] Quit\n")
 
     try:
@@ -103,25 +100,23 @@ def run_interactive(port_name: str | None, baud: int, target_dev: int) -> None:
             return None
 
     last_tx = 0.0
-    alarm_hh = False
 
-    while running:
+    while True:
         key = get_key()
-        if key == '+':
+        if key == '1':
+            state, flow = 1, 200.0
+        elif key == '2':
+            state, flow = 2, 0.0
+        elif key == '3':
+            state, flow = 3, 90.0
+        elif key == '4':
+            state, flow = 4, 0.0
+        elif key == '0':
+            state, flow = 0, 0.0
+        elif key == '+':
             flow = min(250.0, flow + 20.0)
         elif key == '-':
             flow = max(0.0, flow - 20.0)
-        elif key == '0':
-            flow = 0.0
-        elif key == '1':
-            flow = 90.0
-        elif key == '2':
-            flow = 200.0
-        elif key == '3':
-            flow = 250.0
-        elif key == 'h':
-            alarm_hh = not alarm_hh
-            level = 955.0 if alarm_hh else 650.0
         elif key == 'q':
             break
 
@@ -130,33 +125,23 @@ def run_interactive(port_name: str | None, baud: int, target_dev: int) -> None:
             last_tx = now
             frame += 1
 
-            if target_dev == 1:
-                pkt = {
-                    "dev": 1, "lvl": level, "cap": 1000.0, "inflow": 180.0, "outflow": flow,
-                    "p203": {"state": 2 if flow == 0 else 1, "cf": round(flow / 200.0, 2), "label": "TRIPPED" if flow == 0 else "RUNNING"},
-                    "p204": {"state": 0, "cf": 1.0, "label": "STOPPED"},
-                    "alarm": 2 if level >= 950 else (1 if level >= 900 else 0),
-                    "interlock": 1 if level >= 950 else 0
-                }
-            elif target_dev in (2, 5):
-                pkt = {
-                    "dev": target_dev, "flow": flow, "cap": 250.0, "restr": 1.0,
-                    "dir": 1 if flow > 0 else 0, "alarm": 0
-                }
-            elif target_dev == 3:
-                pkt = {
-                    "dev": 3, "flow": flow * 1.5, "cap": 400.0, "intake_factor": 1.0, "alarm": 0
-                }
-            else: # Device 4 (Tank T-101)
-                pkt = {
-                    "dev": 4, "lvl": level, "cap": 1000.0, "inflow": 200.0, "outflow": flow,
-                    "p201": {"state": 2 if flow == 0 else 1, "cf": 1.0, "label": "RUNNING"},
-                    "alarm": 2 if level >= 950 else 0, "interlock": 1 if level >= 950 else 0
-                }
+            pkt = {
+                "v": 1,
+                "seq": frame,
+                "dev": target_dev,
+                "pump": pname.split()[0],
+                "state": state,
+                "flow": int(round(flow)),
+                "max": 200,
+                "rf": int(round((flow / 200.0) * 1000)),
+                "lim": 0,
+                "al": 2 if state == 4 else (1 if state == 3 else 0),
+                "il": 0
+            }
 
             send_packet(ser, pkt, target_dev)
-            if not ser and target_dev in (2, 5):
-                print_ascii_matrix_preview(flow, frame, target_dev)
+            if not ser:
+                print_pump_ascii_preview(pname, state, flow, frame)
 
         time.sleep(0.05)
 
@@ -164,46 +149,15 @@ def run_interactive(port_name: str | None, baud: int, target_dev: int) -> None:
         ser.close()
 
 
-def run_scenario(scenario: str, port_name: str | None, baud: int, target_dev: int) -> None:
-    ser = None
-    if port_name and HAS_SERIAL:
-        try:
-            ser = serial.Serial(port_name, baud, timeout=0.1)
-            print(f"Connected to Arduino on {port_name}")
-        except Exception as e:
-            print(f"Serial port unavailable: {e}")
-
-    print(f"Running automated scenario: {scenario.upper()} on Device {target_dev}")
-    
-    if scenario == "normal":
-        pkt = {"dev": target_dev, "flow": 200.0, "cap": 250.0, "restr": 1.0, "dir": 1, "alarm": 0}
-        send_packet(ser, pkt, target_dev)
-    elif scenario == "degrade":
-        for f in range(200, 80, -10):
-            pkt = {"dev": target_dev, "flow": float(f), "cap": 250.0, "restr": 1.0, "dir": 1, "alarm": 0}
-            send_packet(ser, pkt, target_dev)
-            time.sleep(0.4)
-    elif scenario == "trip":
-        pkt = {"dev": target_dev, "flow": 0.0, "cap": 250.0, "restr": 1.0, "dir": 0, "alarm": 1}
-        send_packet(ser, pkt, target_dev)
-
-    if ser:
-        ser.close()
-
-
 def main():
-    parser = argparse.ArgumentParser(description="AVON AI 5-Node Hardware Test Feeder")
+    parser = argparse.ArgumentParser(description="AVON AI Physical Pump Test Feeder")
     parser.add_argument("--port", help="Serial COM port (e.g. COM3)")
     parser.add_argument("--baud", type=int, default=115200, help="Baud rate (default 115200)")
-    parser.add_argument("--device", type=int, default=2, choices=[1, 2, 3, 4, 5], help="Target Device ID (1..5)")
-    parser.add_argument("--interactive", action="store_true", help="Launch interactive control slider")
-    parser.add_argument("--scenario", choices=["normal", "degrade", "trip"], help="Run automated scenario")
+    parser.add_argument("--device", type=int, default=1, choices=[1, 2, 3, 4, 5], help="Target Pump ID (1..5)")
+    parser.add_argument("--interactive", action="store_true", help="Launch interactive pump tester")
     args = parser.parse_args()
 
-    if args.scenario:
-        run_scenario(args.scenario, args.port, args.baud, args.device)
-    else:
-        run_interactive(args.port, args.baud, args.device)
+    run_interactive(args.port, args.baud, args.device)
 
 
 if __name__ == "__main__":

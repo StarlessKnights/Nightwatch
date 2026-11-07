@@ -3,76 +3,57 @@
 #include <Arduino.h>
 
 /**
- * AVON AI - Hardware Telemetry Protocol Structures
- * Supports 5 Arduino UNO R4 WiFi 12x8 LED Matrix nodes.
+ * AVON AI - 5 Pump Network Protocol Definitions
+ * All 5 Arduino UNO R4 WiFi boards act as active physical pump visualizers.
  */
 
 #ifndef DEVICE_ID
-#define DEVICE_ID 2
+#define DEVICE_ID 1
 #endif
 
-#ifndef DEVICE_ROLE
-#define DEVICE_ROLE "PIPELINE_1"
+#ifndef PUMP_NAME
+#define PUMP_NAME "P-203"
 #endif
 
-// Pump state enum
-enum PumpState {
-    PUMP_STOPPED = 0,
-    PUMP_RUNNING = 1,
-    PUMP_TRIPPED = 2,
-    PUMP_STARTING = 3
+// Pump state codes matching Manas v1 protocol
+enum PumpRunState {
+    PUMP_STATE_STOPPED = 0,
+    PUMP_STATE_RUNNING = 1,
+    PUMP_STATE_STARTING = 2,
+    PUMP_STATE_DEGRADED = 3,
+    PUMP_STATE_TRIPPED = 4,
+    PUMP_STATE_UNAVAILABLE = 5
 };
 
-// Alarm severity enum
+// Limiting cause codes
+enum LimitingCause {
+    LIMIT_NONE = 0,
+    LIMIT_PIPELINE = 1,
+    LIMIT_TREATMENT = 2,
+    LIMIT_TANK_VOLUME = 3
+};
+
+// Alarm severity codes
 enum AlarmSeverity {
     ALARM_NONE = 0,
-    ALARM_HIGH = 1,
-    ALARM_CRITICAL_HH = 2
+    ALARM_ADVISORY = 1,
+    ALARM_HIGH = 2,
+    ALARM_CRITICAL = 3
 };
 
-// Device 1: Tank T-104 & Dual Pumps (P-203 Duty, P-204 Standby)
-struct Tank104Telemetry {
-    float level_bbl;
-    float capacity_bbl;
-    float inflow_rate;
-    float outflow_rate;
-    uint8_t p203_state;
-    float p203_cf;
-    uint8_t p204_state;
-    float p204_cf;
-    uint8_t alarm_level;
-    bool interlock_tripped;
+// Standardized telemetry packet for each pump node
+struct PumpNodeTelemetry {
+    uint8_t dev_id;
+    uint16_t seq;
+    uint8_t state;            // 0..5
+    float flow_bbl_hr;       // Actual fluid throughput
+    float rated_flow_bbl_hr; // Rated design capacity (e.g. 200)
+    float capacity_factor;   // 0.0 .. 1.0 (degrade factor)
+    uint8_t limiting_cause;  // 0=none, 1=pipeline, 2=treatment, 3=volume
+    uint8_t alarm_level;     // 0=none, 1=advisory, 2=high, 3=critical
+    bool interlock_shut_in;  // Inflow pump shut in by HH interlock
 };
 
-// Device 2 & 5: Pipelines PL-1 & PL-2
-struct PipelineTelemetry {
-    float flow_bbl_hr;
-    float capacity_bbl_hr;
-    float restriction_factor;
-    int8_t direction; // 1 = forward, 0 = stopped, -1 = reverse
-    uint8_t alarm;
-};
-
-// Device 3: Treatment Facility TRT-1
-struct TreatmentTelemetry {
-    float flow_bbl_hr;
-    float capacity_bbl_hr;
-    float intake_factor;
-    uint8_t alarm;
-};
-
-// Device 4: Tank T-101 & Pump P-201
-struct Tank101Telemetry {
-    float level_bbl;
-    float capacity_bbl;
-    float inflow_rate;
-    float outflow_rate;
-    uint8_t p201_state;
-    float p201_cf;
-    uint8_t alarm_level;
-    bool interlock_tripped;
-};
-
-// Matrix dimensions for Arduino UNO R4
+// Matrix dimensions
 constexpr uint8_t MATRIX_COLS = 12;
 constexpr uint8_t MATRIX_ROWS = 8;

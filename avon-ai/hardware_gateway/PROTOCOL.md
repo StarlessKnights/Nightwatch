@@ -1,116 +1,78 @@
-# AVON AI — Hardware Serial Protocol Specification (5-Device Network)
+# AVON AI — Hardware Serial Protocol Specification (5-Pump Network)
 
-This document defines the serial communication protocol between the **Computer Host Gateway** and the **5 Arduino UNO R4 WiFi** microcontrollers driving the 12×8 LED matrices.
-
----
-
-## 1. Network Topology & Physical Allocation
-
-The 5 Arduinos represent the complete produced-water network arranged on the demo table:
-
-```
-[ Device 4: Tank T-101 & P-201 ] ===> [ Device 5: Pipeline PL-2 ] ──┐
-                                                                    ├──> [ Device 3: Treatment TRT-1 ]
-[ Device 1: Tank T-104 & Pumps ] ===> [ Device 2: Pipeline PL-1 ] ──┘
-```
-
-| Device ID | Plant Asset | Matrix Visual Function |
-|---|---|---|
-| **Device 1** | **Tank T-104 & P-203/P-204** | Tank level bar (0–1000 bbl), H/HH alarms, duty/standby pump status |
-| **Device 2** | **Pipeline PL-1** | Upper waterflow animation (speed $\propto$ PL-1 flow 0–250 bbl/hr) |
-| **Device 3** | **Treatment TRT-1** | Combined processing intake vortex & backpressure alert (0–400 bbl/hr) |
-| **Device 4** | **Tank T-101 & P-201** | Tank level bar (0–1000 bbl), H/HH alarms, P-201 pump status |
-| **Device 5** | **Pipeline PL-2** | Lower waterflow animation (speed $\propto$ PL-2 flow 0–250 bbl/hr) |
+All **5 Arduino UNO R4 WiFi** nodes act as **physical industrial pumps** in the synthetic produced-water network.
 
 ---
 
-## 2. Physical & Serial Parameters
+## 1. Physical Pump Assignment
 
-- **Interface:** USB CDC Serial (e.g. `COM3`..`COM7` on Windows; `/dev/ttyACM0`..`/dev/ttyACM4` on Linux/macOS)
-- **Baud Rate:** `115200`
-- **Data Bits:** 8 | **Parity:** None | **Stop Bits:** 1
-- **Framing:** One JSON object per line, terminated by newline (`\n`).
-- **Update Frequency:** Dispatched every simulation tick (~5–10 Hz).
-
----
-
-## 3. Packet Schemas (Computer $\rightarrow$ Arduinos)
-
-### Device 1: Tank T-104 & Pumps P-203 (Duty) / P-204 (Standby)
-```json
-{
-  "dev": 1,
-  "lvl": 880.0,
-  "cap": 1000.0,
-  "inflow": 180.0,
-  "outflow": 90.0,
-  "p203": {"state": 1, "cf": 0.45, "label": "RUNNING"},
-  "p204": {"state": 0, "cf": 1.0, "label": "STOPPED"},
-  "alarm": 1,
-  "interlock": 0
-}
-```
-
-### Device 2: Pipeline PL-1 (Upper Fluid Flow Visualizer)
-```json
-{
-  "dev": 2,
-  "flow": 90.0,
-  "cap": 250.0,
-  "restr": 1.0,
-  "dir": 1,
-  "alarm": 0
-}
-```
-
-### Device 3: Treatment Facility TRT-1 (Central Intake & Backpressure Hub)
-```json
-{
-  "dev": 3,
-  "flow": 290.0,
-  "cap": 400.0,
-  "intake_factor": 1.0,
-  "alarm": 0
-}
-```
-
-### Device 4: Tank T-101 & Pump P-201
-```json
-{
-  "dev": 4,
-  "lvl": 650.0,
-  "cap": 1000.0,
-  "inflow": 200.0,
-  "outflow": 200.0,
-  "p201": {"state": 1, "cf": 1.0, "label": "RUNNING"},
-  "alarm": 0,
-  "interlock": 0
-}
-```
-
-### Device 5: Pipeline PL-2 (Lower Fluid Flow Visualizer)
-```json
-{
-  "dev": 5,
-  "flow": 200.0,
-  "cap": 250.0,
-  "restr": 1.0,
-  "dir": 1,
-  "alarm": 0
-}
-```
+| Device ID | Pump Tag | Role | Plant Location | Rated Capacity |
+|---|---|---|---|---|
+| **Device 1** | **P-203** | Primary Duty Outflow Pump | Tank T-104 $\rightarrow$ Pipeline PL-1 | 200 bbl/hr |
+| **Device 2** | **P-204** | Redundant Standby Pump | Tank T-104 $\rightarrow$ Pipeline PL-1 (Auto-changeover) | 200 bbl/hr |
+| **Device 3** | **P-201** | Primary Duty Outflow Pump | Tank T-101 $\rightarrow$ Pipeline PL-2 | 200 bbl/hr |
+| **Device 4** | **P-SRC1** | Wellhead Inflow Lift Pump 1 | Wellhead Source 1 $\rightarrow$ Tank T-104 | 180 bbl/hr |
+| **Device 5** | **P-SRC2** | Wellhead Inflow Lift Pump 2 | Wellhead Source 2 $\rightarrow$ Tank T-101 | 150 bbl/hr |
 
 ---
 
-## 4. Waterflow Animation Speed Mapping (Devices 2 & 5)
+## 2. 12×8 LED Matrix Pump Graphics Specification
 
-For the pipeline LED matrices:
-$$ \text{frame\_delay\_ms} = \begin{cases} 
-\text{No movement / static dashes} & \text{if } \text{flow} \le 1.0 \\
-\text{clamp}\left(320 - \left(\frac{\text{flow}}{250.0} \times 280\right), 35, 320\right) & \text{if } \text{flow} > 1.0
-\end{cases} $$
+Each pump's matrix is divided into three functional zones:
 
-- **0 bbl/hr:** Static dashed line (flow stopped or pump tripped).
-- **90 bbl/hr:** ~220 ms delay (slow trickle indicating pump degradation).
-- **200 bbl/hr:** ~95 ms delay (steady, healthy waterflow).
-- **250 bbl/hr:** ~40 ms delay (high velocity maximum flow).
+```
+  Cols 0..2 (Suction)        Cols 3..8 (Impeller / Volute)        Cols 9..11 (Discharge)
+     Fluid flowing IN  ===>       Rotating Rotor / Impeller  ===>   Fluid surging OUT
+```
+
+### Visual States:
+1. **RUNNING (state 1):**
+   - Suction: Inflow particles `>` streaming into the pump.
+   - Rotor: 4-frame rotating impeller spinning at high speed (delay ~45–120ms).
+   - Discharge: Continuous fluid particles surging out at speed $\propto$ `flow_bbl_hr`.
+2. **DEGRADED (state 3):**
+   - Impeller rotates with labored, slower rotation (~180ms delay).
+   - Discharge displays reduced trickle (e.g. 90 bbl/hr).
+3. **STARTING (state 2):**
+   - Center impeller hub pulses rhythmically during start delay before engaging.
+4. **TRIPPED (state 4):**
+   - Impeller is completely stationary.
+   - Large flashing `X` overlays the pump casing.
+   - Zero discharge flow.
+5. **STOPPED / STANDBY (state 0):**
+   - Stationary idle cross, empty discharge pipe.
+6. **INTERLOCK SHUT-IN (il=1):**
+   - Four corner strobe LEDs flash critical warning; pump halts immediately.
+
+---
+
+## 3. Serial Packet Contract (NDJSON, 115200 Baud)
+
+Packets sent at 5–10 Hz matching Manas v1 protocol:
+
+```json
+{"v":1,"seq":120,"dev":1,"pump":"P-203","state":1,"flow":200,"max":200,"rf":1000,"lim":0,"al":0,"il":0}
+{"v":1,"seq":121,"dev":2,"pump":"P-204","state":0,"flow":0,"max":200,"rf":1000,"lim":0,"al":0,"il":0}
+{"v":1,"seq":122,"dev":3,"pump":"P-201","state":1,"flow":200,"max":200,"rf":1000,"lim":0,"al":0,"il":0}
+{"v":1,"seq":123,"dev":4,"pump":"P-SRC1","state":1,"flow":180,"max":180,"rf":1000,"lim":0,"al":0,"il":0}
+{"v":1,"seq":124,"dev":5,"pump":"P-SRC2","state":1,"flow":150,"max":150,"rf":1000,"lim":0,"al":0,"il":0}
+```
+
+### Fields:
+- `v`: Protocol version (`1`).
+- `seq`: Monotonically increasing sequence number (wraparound at 65536).
+- `dev`: Target Arduino ID (`1` to `5`).
+- `pump`: Plant tag (`"P-203"`, `"P-204"`, `"P-201"`, `"P-SRC1"`, `"P-SRC2"`).
+- `state`:
+  - `0`: STOPPED / Standby
+  - `1`: RUNNING
+  - `2`: STARTING
+  - `3`: DEGRADED (wear / low flow)
+  - `4`: TRIPPED (fault)
+  - `5`: UNAVAILABLE (lockout)
+- `flow`: Real-time throughput in bbl/hr.
+- `max`: Rated design flow in bbl/hr.
+- `rf`: Capacity factor in thousandths (`1000` = 1.0, `450` = 0.45).
+- `lim`: Limiting bottleneck (`0`=none, `1`=pipeline, `2`=treatment, `3`=tank volume).
+- `al`: Alarm severity (`0`=none, `1`=advisory, `2`=high, `3`=critical).
+- `il`: Safety interlock shut-in (`1`=shut in, `0`=normal).

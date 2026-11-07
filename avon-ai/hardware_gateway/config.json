@@ -5,7 +5,6 @@
     "reconnect_interval_s": 2.0
   },
   "serial": {
-    "protocol_version": 1,
     "baud_rate": 115200,
     "timeout_s": 0.05,
     "reconnect_cooldown_s": 3.0,
@@ -25,14 +24,11 @@
       "device5": "/dev/ttyACM4"
     }
   },
-  "telemetry": {
-    "tank_104_id": "T-104",
-    "tank_101_id": "T-101",
-    "duty_pump_id": "P-203",
-    "standby_pump_id": "P-204",
-    "pump_201_id": "P-201",
-    "pipeline_1_id": "PL-1",
-    "pipeline_2_id": "PL-2",
-    "treatment_id": "TRT-1"
+  "pumps": {
+    "device1": {"id": "P-203", "name": "P-203 (Duty T-104)", "type": "outflow", "rated_flow": 200},
+    "device2": {"id": "P-204", "name": "P-204 (Standby T-104)", "type": "outflow", "rated_flow": 200},
+    "device3": {"id": "P-201", "name": "P-201 (Duty T-101)", "type": "outflow", "rated_flow": 200},
+    "device4": {"id": "SRC-1", "name": "P-SRC1 (Wellhead Inflow 1)", "type": "inflow", "rated_flow": 180, "feeds_tank": "T-104"},
+    "device5": {"id": "SRC-2", "name": "P-SRC2 (Wellhead Inflow 2)", "type": "inflow", "rated_flow": 150, "feeds_tank": "T-101"}
   }
 }
