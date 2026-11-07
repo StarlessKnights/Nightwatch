@@ -26,5 +26,21 @@ cd backend && .venv/bin/python -m pytest         # 27 tests
 - Action lead time = intrinsic lead (start delay / ramp / truck 45 min) + `operator_approval_buffer_min`; act-by = time-to-HH minus that.
 - Do-nothing cost is derived from the 8 h rollout, so a degraded pump that keeps cycling the HH interlock costs several shut-ins (~$24.5k each), not one.
 - Pairs are only built from singles that failed on simulation (not hard constraints) – feasible singles dominate any pair containing them.
-- Not built (marked `TODO(phase3)`): LLM layer, Monte Carlo, lead/lag rotation, REROUTE_TO_BUFFER.
+- Not built: Monte Carlo, lead/lag rotation, REROUTE_TO_BUFFER (the buffer edge is topology only).
 - All numbers in `data/config.json` are illustrative. Standards are named only as inspiration.
+
+## AVON Intelligence / Nemotron
+
+The Intelligence panel monitors equipment, faults, alarms and forecast changes automatically. It groups related incidents, links their simulator evidence, highlights affected graph nodes, reviews recommendations, validates alternative proposals, and supports natural-language questions and isolated what-if simulations. The decision-engine tab retains the original ranking.
+
+Copy `backend/.env.example` to `backend/.env` and set `NVIDIA_API_KEY` to connect Nemotron. Start the backend normally; it loads that file automatically. Keys stay on the backend. Model IDs and the OpenAI-compatible base URL are configurable. The defaults use Nemotron 3.5 Lightning and Nemotron 3.5 Super VL; the selected endpoint must support tool calling and JSON output. A real inference call requires a valid provider key and model access.
+
+Without a key, deterministic incident monitoring, evidence, decision-engine proposals, history, and supported scenario questions remain available. Set `AVON_AGENT_ENABLED=false` to disable the intelligence layer completely, or toggle it in the panel. Playback and safety protection remain independent.
+
+Try scene 2 for pump degradation, scene 3 for standby unavailability, scene 4 for automatic changeover, and scene 5 for correlated treatment restrictions. In Ask, try “Why is T-104 filling up?”, “What happens if P-204 becomes unavailable?”, or “What happens if treatment capacity drops by 50%?”. Without Nemotron, only those limited scenario patterns are parsed; broader reasoning requires the configured model.
+
+Proposals enter a central queue, are checked with the same deterministic feasibility/cost evaluator as the ranking engine, and require explicit operator approval. Approval revalidates current state; if playback changes during validation, pause and retry. `EXECUTED_IN_SIM` means scheduled effects were applied, not that a pump ramp or transport cycle has finished. A hypothetical scenario never modifies the playback state. Production-reduction proposals accept integer percentages from 1 to 100; unsupported buffer routing is rejected.
+
+Agent requests, tool results, evidence, proposals, decisions, events, and operator-entered synthetic maintenance notes are retained in `data/agent/audit.sqlite3` (ignored by Git). Historical counts are observations from retained simulation events, not reliability probabilities. Model prose is presented as cited qualitative interpretation; displayed quantities come from simulator evidence. If the audit store is unavailable, the panel reports it while simulation continues.
+
+Agent endpoints: `GET /api/agent`, `POST /api/agent/chat`, `POST /api/agent/enabled`, `POST /api/agent/scenarios`, `POST /api/agent/proposals/{id}/{approve|reject}`, `GET /api/agent/history`, and `POST /api/agent/notes`. The approval body contains the displayed `run_id` to reject decisions from previous runs.

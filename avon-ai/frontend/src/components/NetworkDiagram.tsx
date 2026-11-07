@@ -102,7 +102,7 @@ function edgeFlow(env: Envelope, from: string, to: string, fromKind: string): nu
   return 0
 }
 
-export function NetworkDiagram({ env, network }: { env: Envelope; network: Network }) {
+export function NetworkDiagram({ env, network, incidentAssets = [] }: { env: Envelope; network: Network; incidentAssets?: string[] }) {
   const [focus, setFocus] = useState<{ id: string; related: Set<string> } | null>(null)
   useEffect(() => { setFocus(null) }, [env.scenario.id])
 
@@ -111,6 +111,7 @@ export function NetworkDiagram({ env, network }: { env: Envelope; network: Netwo
 
   const nodes: Node<D>[] = network.topology.nodes.map((n) => ({
     id: n.id, type: n.type, draggable: false,
+    className: incidentAssets.includes(n.id) ? 'incident-node' : '',
     position: { x: n.ui.col * COL_W, y: n.ui.row * ROW_H },
     data: { node: n, env, network, dim: !inFocus(n.id) },
   }))
@@ -119,10 +120,11 @@ export function NetworkDiagram({ env, network }: { env: Envelope; network: Netwo
     const flow = transfer ? 0 : edgeFlow(env, e.from, e.to, kinds[e.from])
     const live = flow > FLOW_EPS
     const dim = !(inFocus(e.from) && inFocus(e.to))
+    const affected = !transfer && incidentAssets.includes(e.from) && incidentAssets.includes(e.to)
     return {
       id: `${e.from}-${e.to}`, source: e.from, target: e.to, animated: live,
       label: transfer ? 'buffer transfer' : live ? `${flow.toFixed(0)} bbl/hr` : undefined,
-      style: { stroke: live ? 'var(--flow)' : 'var(--idle)', strokeWidth: live ? 2.5 : 1.5, strokeDasharray: live ? undefined : '5 5', opacity: dim ? 0.2 : live ? 1 : 0.6 },
+      style: { stroke: affected ? 'var(--warn)' : live ? 'var(--flow)' : 'var(--idle)', strokeWidth: affected ? 3 : live ? 2.5 : 1.5, strokeDasharray: live ? undefined : '5 5', opacity: dim ? 0.2 : live ? 1 : 0.6 },
       labelStyle: { fill: 'var(--text)', fontSize: 11 }, labelBgStyle: { fill: 'var(--panel)' },
     }
   })

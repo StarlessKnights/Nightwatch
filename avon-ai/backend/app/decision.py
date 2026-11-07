@@ -64,8 +64,9 @@ def probable_cause(state: SimState, eff, topo: Topology, cfg: Config) -> list[Ca
 
 
 def recommend(state: SimState, topo: Topology, cfg: Config, unavailable_overrides: frozenset | set = frozenset(),
-              engine_enabled: bool = True) -> Recommendation:
-    # TODO(phase3): the LLM layer reads this Recommendation object (and nothing else).
+              engine_enabled: bool = True, *, proposed_actions: list[act.Action] | None = None) -> Recommendation:
+    if proposed_actions is not None:
+        act.validate_combo(proposed_actions, topo)
     if unavailable_overrides:
         state = replace(state, pumps={p: (replace(s, available=False) if p in unavailable_overrides else s)
                                       for p, s in state.pumps.items()})
@@ -170,7 +171,9 @@ def recommend(state: SimState, topo: Topology, cfg: Config, unavailable_override
             act_by_clock=None if act_by is None else messages.fmt_clock(act_by, start_clock),
             lead_time_min=lead, trajectory_summary=_summary(traj, cfg)), traj
 
-    if engine_enabled and at_risk:
+    if proposed_actions is not None:
+        options.append(evaluate(proposed_actions)[0])
+    elif engine_enabled and at_risk:
         singles = act.generate(state, topo, cfg, at_risk)
         evaluated = [(a, evaluate([a])[0]) for a in singles]
         options += [o for _, o in evaluated]
@@ -219,3 +222,9 @@ def recommend(state: SimState, topo: Topology, cfg: Config, unavailable_override
         affected_assets=Affected(upstream=up, downstream=down, first_to_limit=first), options=ordered,
         ranked_option_ids=ranked, best_option_id=best_id, do_nothing_cost=do_nothing_cost, savings=savings,
         engine_enabled=engine_enabled)
+
+
+def evaluate_actions(state: SimState, topo: Topology, cfg: Config, combo: list[act.Action]) -> Option:
+    """Public proposal verifier using exactly the ranking engine's feasibility/cost logic."""
+    rec = recommend(state, topo, cfg, proposed_actions=combo)
+    return next(o for o in rec.options if o.action_id == act.combo_id(combo))

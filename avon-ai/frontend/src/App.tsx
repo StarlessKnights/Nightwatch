@@ -7,10 +7,15 @@ import { Recommendations } from './components/Recommendations'
 import { TankTrends } from './components/TankTrends'
 import { TransportBar } from './components/TransportBar'
 import { useSim } from './useSim'
+import { useAgent } from './useAgent'
+import { IntelligencePanel } from './components/IntelligencePanel'
 import './App.css'
 
 export default function App() {
   const { network, env, history, events, rec, connected, error, run } = useSim()
+  const intelligence = useAgent(env?.state.run_id)
+  const [showIntelligence, setShowIntelligence] = useState(true)
+  const [agentFocus, setAgentFocus] = useState<string[] | null>(null)
   const [drawer, setDrawer] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
@@ -25,9 +30,10 @@ export default function App() {
       <div className="main">
         <button className="drawer-toggle" onClick={() => setDrawer(!drawer)}>{drawer ? '◀ Faults' : '▶ Faults'}</button>
         {drawer && <FaultPanel env={env} network={network} run={run} />}
-        <div className="center"><NetworkDiagram env={env} network={network} /></div>
-        <div className="right">
-          <Recommendations env={env} rec={rec} selectedId={selectedId} onSelect={setSelectedId} run={run} disclaimer={disclaimer} />
+        <div className="center"><NetworkDiagram env={env} network={network} incidentAssets={agentFocus ?? intelligence.data?.incidents.filter((i) => i.status === 'active').flatMap((i) => i.affected_assets) ?? []} /></div>
+        <div className="right with-intelligence">
+          <div className="panel-switch"><button className={showIntelligence ? 'on' : ''} onClick={() => setShowIntelligence(true)}>AVON Intelligence</button><button className={!showIntelligence ? 'on' : ''} onClick={() => setShowIntelligence(false)}>Decision engine</button></div>
+          {showIntelligence ? <IntelligencePanel key={env.state.run_id} data={intelligence.data} error={intelligence.error} run={intelligence.run} onFocus={setAgentFocus} assets={network.topology.nodes.map((n) => n.id)} /> : <Recommendations env={env} rec={rec} selectedId={selectedId} onSelect={setSelectedId} run={run} disclaimer={disclaimer} />}
           <AlarmList env={env} run={run} />
         </div>
       </div>
