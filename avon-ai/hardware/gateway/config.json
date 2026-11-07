@@ -8,36 +8,29 @@
     "baud_rate": 115200,
     "timeout_s": 0.5,
     "auto_detect": true,
-    "ports": {
-      "device1": "/dev/ttyACM0",
-      "device2": "/dev/ttyACM1",
-      "device3": "/dev/ttyACM2"
-    },
     "windows_ports": {
       "device1": "COM3",
       "device2": "COM4",
-      "device3": "COM5"
+      "device3": "COM5",
+      "device4": "COM6",
+      "device5": "COM7"
+    },
+    "linux_ports": {
+      "device1": "/dev/ttyACM0",
+      "device2": "/dev/ttyACM1",
+      "device3": "/dev/ttyACM2",
+      "device4": "/dev/ttyACM3",
+      "device5": "/dev/ttyACM4"
     }
   },
-  "gpio": {
-    "enabled": true,
-    "pins": {
-      "trip_switch_p203": 17,
-      "degrade_switch_p203": 27,
-      "approve_button": 22,
-      "reset_button": 23,
-      "led_normal_green": 24,
-      "led_advisory_yellow": 25,
-      "led_alarm_red": 8
-    },
-    "debounce_time_s": 0.15
-  },
   "telemetry": {
-    "tank_id": "T-104",
+    "tank_104_id": "T-104",
+    "tank_101_id": "T-101",
     "duty_pump_id": "P-203",
     "standby_pump_id": "P-204",
-    "pipeline_id": "PL-1",
-    "treatment_id": "TRT-1",
-    "source_id": "SRC-1"
+    "pump_201_id": "P-201",
+    "pipeline_1_id": "PL-1",
+    "pipeline_2_id": "PL-2",
+    "treatment_id": "TRT-1"
   }
 }

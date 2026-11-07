@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-AVON AI - Arduino Hardware Test Feeder
-Standalone tool for Person B to test 12x8 LED Matrix animations
+AVON AI - Arduino 5-Node Hardware Test Feeder
+Standalone tool for Person B to test 12x8 LED Matrix animations on any of the 5 Arduinos
 without needing the full backend/frontend running.
 
 Usage:
     python hardware/tools/test_feeder.py --port COM3 --device 2 --interactive
-    python hardware/tools/test_feeder.py --scenario degrade
+    python hardware/tools/test_feeder.py --scenario degrade --device 2
 """
 
 from __future__ import annotations
@@ -24,21 +24,19 @@ except ImportError:
     HAS_SERIAL = False
 
 
-def print_ascii_matrix_preview(flow: float, frame: int) -> None:
-    """Renders a simple 12x8 terminal preview of the waterflow animation."""
-    print("\033[H\033[J", end="") # Clear terminal screen
-    print(f"=== 12x8 LED Matrix Preview (PL-1 Waterflow @ {flow:.1f} bbl/hr) ===")
+def print_ascii_matrix_preview(flow: float, frame: int, dev_id: int) -> None:
+    print("\033[H\033[J", end="")
+    role_name = "Pipeline PL-1" if dev_id == 2 else ("Pipeline PL-2" if dev_id == 5 else f"Device {dev_id}")
+    print(f"=== 12x8 LED Matrix Preview ({role_name} @ {flow:.1f} bbl/hr) ===")
     
-    # 8 rows x 12 cols
     lines = []
-    lines.append("+------------+") # Top wall
+    lines.append("+------------+")
     for r in range(1, 7):
         row_str = "|"
         for c in range(12):
             if flow <= 1.0:
                 row_str += "-" if r in (3, 4) and c in (3, 4, 7, 8) else " "
             else:
-                # Moving wave pattern
                 val = math.sin((c - frame * 0.8) * 0.9)
                 if r in (3, 4) and val > 0.0:
                     row_str += ">"
@@ -48,11 +46,11 @@ def print_ascii_matrix_preview(flow: float, frame: int) -> None:
                     row_str += " "
         row_str += "|"
         lines.append(row_str)
-    lines.append("+------------+") # Bottom wall
+    lines.append("+------------+")
     
     print("\n".join(lines))
     delay_ms = 500 if flow <= 1 else max(35, min(320, int(320 - (flow / 250.0) * 280)))
-    print(f"Frame Delay: {delay_ms} ms | Animation State: {'FROZEN' if flow <= 1 else 'FLOWING'}")
+    print(f"Device: {dev_id} | Delay: {delay_ms} ms | State: {'FROZEN' if flow <= 1 else 'FLOWING'}")
 
 
 def send_packet(ser, payload: dict, dev_id: int) -> None:
@@ -73,30 +71,30 @@ def run_interactive(port_name: str | None, baud: int, target_dev: int) -> None:
             ser = serial.Serial(port_name, baud, timeout=0.1)
             print(f"Connected to Arduino on {port_name} @ {baud}")
         except Exception as e:
-            print(f"Could not open {port_name}: {e}. Running in preview mode.")
+            print(f"Could not open {port_name}: {e}. Running in terminal preview mode.")
 
     flow = 200.0
-    level = 600.0
+    level = 650.0
     frame = 0
     running = True
 
-    print("\nControls:")
+    print(f"\nControls for Device {target_dev}:")
     print("  [+] Increase flow rate (+20 bbl/hr)")
     print("  [-] Decrease flow rate (-20 bbl/hr)")
-    print("  [0] Zero flow (Tripped pump)")
+    print("  [0] Zero flow (0 bbl/hr)")
     print("  [1] Degraded flow (90 bbl/hr)")
     print("  [2] Normal flow (200 bbl/hr)")
     print("  [3] Max flow (250 bbl/hr)")
-    print("  [h] High-High Alarm toggle")
+    print("  [h] Toggle High-High Alarm (level 955 bbl)")
     print("  [q] Quit\n")
 
     try:
-        import msvcrt # Windows
+        import msvcrt
         def get_key():
             if msvcrt.kbhit():
                 return msvcrt.getch().decode("utf-8", errors="ignore").lower()
             return None
-    except ImportError: # Linux/Mac
+    except ImportError:
         import select
         def get_key():
             dr, _, _ = select.select([sys.stdin], [], [], 0)
@@ -123,48 +121,42 @@ def run_interactive(port_name: str | None, baud: int, target_dev: int) -> None:
             flow = 250.0
         elif key == 'h':
             alarm_hh = not alarm_hh
-            level = 955.0 if alarm_hh else 600.0
+            level = 955.0 if alarm_hh else 650.0
         elif key == 'q':
             break
 
         now = time.monotonic()
-        if now - last_tx >= 0.15: # ~6 Hz update
+        if now - last_tx >= 0.15:
             last_tx = now
             frame += 1
 
             if target_dev == 1:
                 pkt = {
-                    "dev": 1,
-                    "lvl": level,
-                    "cap": 1000.0,
-                    "inflow": 180.0,
-                    "outflow": flow,
+                    "dev": 1, "lvl": level, "cap": 1000.0, "inflow": 180.0, "outflow": flow,
                     "p203": {"state": 2 if flow == 0 else 1, "cf": round(flow / 200.0, 2), "label": "TRIPPED" if flow == 0 else "RUNNING"},
                     "p204": {"state": 0, "cf": 1.0, "label": "STOPPED"},
                     "alarm": 2 if level >= 950 else (1 if level >= 900 else 0),
                     "interlock": 1 if level >= 950 else 0
                 }
-            elif target_dev == 2:
+            elif target_dev in (2, 5):
                 pkt = {
-                    "dev": 2,
-                    "flow": flow,
-                    "cap": 250.0,
-                    "restr": 1.0,
-                    "dir": 1 if flow > 0 else 0,
-                    "alarm": 0
+                    "dev": target_dev, "flow": flow, "cap": 250.0, "restr": 1.0,
+                    "dir": 1 if flow > 0 else 0, "alarm": 0
                 }
-            else:
+            elif target_dev == 3:
                 pkt = {
-                    "dev": 3,
-                    "flow": flow,
-                    "cap": 400.0,
-                    "intake_factor": 1.0,
-                    "alarm": 0
+                    "dev": 3, "flow": flow * 1.5, "cap": 400.0, "intake_factor": 1.0, "alarm": 0
+                }
+            else: # Device 4 (Tank T-101)
+                pkt = {
+                    "dev": 4, "lvl": level, "cap": 1000.0, "inflow": 200.0, "outflow": flow,
+                    "p201": {"state": 2 if flow == 0 else 1, "cf": 1.0, "label": "RUNNING"},
+                    "alarm": 2 if level >= 950 else 0, "interlock": 1 if level >= 950 else 0
                 }
 
             send_packet(ser, pkt, target_dev)
-            if not ser:
-                print_ascii_matrix_preview(flow, frame)
+            if not ser and target_dev in (2, 5):
+                print_ascii_matrix_preview(flow, frame, target_dev)
 
         time.sleep(0.05)
 
@@ -181,31 +173,18 @@ def run_scenario(scenario: str, port_name: str | None, baud: int, target_dev: in
         except Exception as e:
             print(f"Serial port unavailable: {e}")
 
-    print(f"Running automated test scenario: {scenario.upper()}")
+    print(f"Running automated scenario: {scenario.upper()} on Device {target_dev}")
     
     if scenario == "normal":
         pkt = {"dev": target_dev, "flow": 200.0, "cap": 250.0, "restr": 1.0, "dir": 1, "alarm": 0}
         send_packet(ser, pkt, target_dev)
     elif scenario == "degrade":
-        print("Emulating Scene 2 (Pump degradation to 90 bbl/hr)...")
         for f in range(200, 80, -10):
             pkt = {"dev": target_dev, "flow": float(f), "cap": 250.0, "restr": 1.0, "dir": 1, "alarm": 0}
             send_packet(ser, pkt, target_dev)
             time.sleep(0.4)
     elif scenario == "trip":
-        print("Emulating Scene 4 (Pump trip -> zero flow -> standby restart)...")
-        # 1. Running
-        pkt = {"dev": target_dev, "flow": 200.0, "cap": 250.0, "restr": 1.0, "dir": 1, "alarm": 0}
-        send_packet(ser, pkt, target_dev)
-        time.sleep(2)
-        # 2. Trip
-        print("PUMP TRIPPED! Flow = 0")
         pkt = {"dev": target_dev, "flow": 0.0, "cap": 250.0, "restr": 1.0, "dir": 0, "alarm": 1}
-        send_packet(ser, pkt, target_dev)
-        time.sleep(3)
-        # 3. Standby Auto-start
-        print("STANDBY AUTO-STARTED! Flow resumes to 200 bbl/hr")
-        pkt = {"dev": target_dev, "flow": 200.0, "cap": 250.0, "restr": 1.0, "dir": 1, "alarm": 0}
         send_packet(ser, pkt, target_dev)
 
     if ser:
@@ -213,10 +192,10 @@ def run_scenario(scenario: str, port_name: str | None, baud: int, target_dev: in
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AVON AI Hardware Test Feeder")
-    parser.add_argument("--port", help="Serial port (e.g. COM3 or /dev/ttyACM0)")
+    parser = argparse.ArgumentParser(description="AVON AI 5-Node Hardware Test Feeder")
+    parser.add_argument("--port", help="Serial COM port (e.g. COM3)")
     parser.add_argument("--baud", type=int, default=115200, help="Baud rate (default 115200)")
-    parser.add_argument("--device", type=int, default=2, choices=[1, 2, 3], help="Target Device ID")
+    parser.add_argument("--device", type=int, default=2, choices=[1, 2, 3, 4, 5], help="Target Device ID (1..5)")
     parser.add_argument("--interactive", action="store_true", help="Launch interactive control slider")
     parser.add_argument("--scenario", choices=["normal", "degrade", "trip"], help="Run automated scenario")
     args = parser.parse_args()

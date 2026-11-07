@@ -1,15 +1,7 @@
-# AVON AI Hardware & Edge Gateway Dependencies
+# AVON AI Hardware Gateway & Tools Dependencies
 # Install with: pip install -r requirements-hw.txt
 
 pyserial>=3.5
 websockets>=12.0
 requests>=2.31.0
-urllib3>=2.0.0
-
-# Raspberry Pi GPIO & Linux event libraries
-# Note: On Raspberry Pi 5 (RP1 chip), lgpio/rpi-lgpio is used instead of legacy RPi.GPIO
-gpiozero>=2.0
-lgpio>=0.2.2.0; sys_platform == 'linux'
-
-# Terminal UI & debugging utilities
 colorama>=0.4.6

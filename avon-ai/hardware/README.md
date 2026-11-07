@@ -1,45 +1,28 @@
-# AVON AI — Hardware Integration & Edge Subsystem
+# AVON AI — Hardware Integration & Edge Subsystem (5-Node Visualizer Network)
 
-This directory contains the edge gateway, physical controls, kiosk setup, and PlatformIO embedded firmware for integrating physical hardware into the **AVON AI** produced-water network.
+This directory contains the serial gateway, operator control deck, and PlatformIO embedded firmware for integrating **5 physical Arduino UNO R4 WiFi** microcontrollers with 12×8 LED matrices into the **AVON AI** produced-water network.
+
+All controls and the display kiosk run directly on the host computer.
 
 ---
 
-## Hardware Inventory & Architecture
+## Physical Network Layout (The Presentation Table)
 
-| Hardware Unit | Role | OS / Framework | Key Responsibility |
-|---|---|---|---|
-| **Raspberry Pi 5** | Industrial Edge Gateway & SCADA Controller | Raspberry Pi OS (64-bit Bookworm) | Runs `bridge.py` (WS $\leftrightarrow$ Serial), `gpio_controller.py` (physical switches/buttons), safety interlock edge monitor. |
-| **Raspberry Pi 3** | Operator Kiosk / Terminal | Raspberry Pi OS (32/64-bit) | Dedicated HMI console running Chromium fullscreen kiosk to the AVON AI React frontend. |
-| **Arduino UNO R4 #1** | Tank T-104 & Pump Station Display | PlatformIO (Arduino Renesas RA4M1) | 12×8 LED Matrix: Tank level bar graph (0–1000 bbl), H/HH alarms, duty/standby pump status. |
-| **Arduino UNO R4 #2** | Pipeline PL-1 Waterflow Visualizer | PlatformIO (Arduino Renesas RA4M1) | 12×8 LED Matrix: Dynamic cascading waterflow ripples with frame rate proportional to `flow.py` bbl/hr. |
-| **Arduino UNO R4 #3** | Treatment Facility TRT-1 & Inflow Hub | PlatformIO (Arduino Renesas RA4M1) | 12×8 LED Matrix: Treatment intake whirlpool/processing animation, backpressure throttling alert. |
+The 5 Arduinos map directly to the plant network topology:
 
 ```
-                       PHYSICAL DATA FLOW ARCHITECTURE
-                       
-    [ Central Sim Backend ] (FastAPI @ :8000)
-              │
-              │ WebSocket (/ws/sim) & REST (/api)
-              ▼
-   ┌─────────────────────────────────────────────────────────────────┐
-   │                       RASPBERRY PI 5                            │
-   │                                                                 │
-   │  ┌────────────────────────┐      ┌───────────────────────────┐  │
-   │  │   bridge.py            │◄────►│   gpio_controller.py      │  │
-   │  │   (WebSocket Client &  │      │   (Physical E-Stop,       │  │
-   │  │    Serial Dispatcher)  │      │    Degrade Dial, Approve) │  │
-   │  └───────────┬────────────┘      └───────────────────────────┘  │
-   └──────────────┼──────────────────────────────────────────────────┘
-                  │ 3× USB Serial links @ 115200 baud
-      ┌───────────┼───────────┐
-      ▼           ▼           ▼
- ┌─────────┐ ┌─────────┐ ┌─────────┐                ┌─────────────────┐
- │ Arduino │ │ Arduino │ │ Arduino │                │ RASPBERRY PI 3  │
- │ UNO R4  │ │ UNO R4  │ │ UNO R4  │                │                 │
- │ Unit #1 │ │ Unit #2 │ │ Unit #3 │                │ Chromium Kiosk  │
- │ (Tank)  │ │ (Pipe)  │ │ (Trt)   │                │ (React HMI UI)  │
- └─────────┘ └─────────┘ └─────────┘                └─────────────────┘
+[ Arduino #4: Tank T-101 & P-201 ] ===> [ Arduino #5: Pipeline PL-2 ] ──┐
+                                                                        ├──> [ Arduino #3: Treatment TRT-1 ]
+[ Arduino #1: Tank T-104 & Pumps ] ===> [ Arduino #2: Pipeline PL-1 ] ──┘
 ```
+
+| Unit | Plant Asset | Matrix Visual Function |
+|---|---|---|
+| **Arduino #1** | **Tank T-104 & Pumps (P-203/P-204)** | Level fill bar (0–1000 bbl), H/HH alarms, duty/standby pump status |
+| **Arduino #2** | **Pipeline PL-1** | Dynamic fluid flow wave (speed $\propto$ PL-1 flow 0–250 bbl/hr) |
+| **Arduino #3** | **Treatment TRT-1** | Swirling intake vortex (0–400 bbl/hr) & backpressure constraint alert |
+| **Arduino #4** | **Tank T-101 & Pump P-201** | Level fill bar (0–1000 bbl), H/HH alarms, P-201 pump status |
+| **Arduino #5** | **Pipeline PL-2** | Dynamic fluid flow wave (speed $\propto$ PL-2 flow 0–250 bbl/hr) |
 
 ---
 
@@ -49,74 +32,91 @@ This directory contains the edge gateway, physical controls, kiosk setup, and Pl
 hardware/
   README.md                     # This documentation
   PROTOCOL.md                   # Packet specifications and handoff docs for Person B
-  requirements-hw.txt           # Python dependencies (pyserial, websockets, requests, gpiozero, etc.)
-  setup_pi.sh                   # Automated deployment script for Raspberry Pi 5 & 3
+  requirements-hw.txt           # Python dependencies (pyserial, websockets, requests, colorama)
 
-  firmware/                     # PlatformIO firmware project for Arduino UNO R4s
-    platformio.ini              # Multi-target build configuration (device 1, 2, 3)
+  firmware/                     # PlatformIO firmware project for the 5 Arduino UNO R4s
+    platformio.ini              # Multi-target build configuration (device 1..5)
     include/
       protocol.h                # C/C++ packet structs & parser matching PROTOCOL.md
     src/
-      main.cpp                  # Modular firmware with non-blocking serial parser & role handlers
-    lib/                        # Custom animation & matrix helper libraries
+      main.cpp                  # Modular firmware with 5 asset renderers & fallback demo
 
-  gateway/                      # Software running on Raspberry Pi 5
-    bridge.py                   # High-performance WebSocket-to-Serial dispatcher
-    gpio_controller.py          # Physical hardware switches, buttons, and status LEDs
-    config.json                 # Ports, pinout mapping, and network endpoints
-    systemd/
-      avon-gateway.service      # Systemd service for auto-start on boot
-
-  kiosk/                        # Software running on Raspberry Pi 3
-    kiosk.sh                    # Low-overhead Chromium kiosk script (tuned for 1GB RAM)
-    systemd/
-      avon-kiosk.service        # Systemd service for auto-start on boot
+  gateway/                      # Software running on your computer
+    bridge.py                   # High-performance WebSocket-to-5x-Serial dispatcher
+    control_deck.py             # Computer keyboard control deck (Trip, Degrade, Approve, Reset)
+    config.json                 # COM port assignments and network endpoints
 
   tools/                        # Testing & Benchmarking tools
-    test_feeder.py              # Interactive CLI to send mock telemetry to Arduinos
+    test_feeder.py              # Interactive CLI to send mock telemetry to any of the 5 Arduinos
     mock_serial_bridge.py       # Virtual serial loopback emulator for off-hardware testing
 ```
 
 ---
 
-## Quickstart
+## How to Flash the 5 Arduinos with PlatformIO
 
-### 1. Developer Machine (Testing without hardware)
-Test the serial packets in interactive simulation mode:
-```bash
-# Run the interactive feeder (supports keyboard shortcuts to test animations)
-python hardware/tools/test_feeder.py --interactive
-```
+Plug an Arduino UNO R4 into your computer via USB-C, navigate to `hardware/firmware`, and flash the appropriate profile:
 
-### 2. Raspberry Pi 5 Setup (Edge Gateway & Controls)
-```bash
-cd hardware
-bash setup_pi.sh --role gateway
-
-# Start manually or via systemd
-python3 gateway/bridge.py --config gateway/config.json
-```
-
-### 3. Raspberry Pi 3 Setup (Operator Kiosk)
-```bash
-cd hardware
-bash setup_pi.sh --role kiosk
-
-# Launch the kiosk browser (points to Pi 5 or server IP)
-bash kiosk/kiosk.sh http://<PI5_IP>:5173
-```
-
-### 4. Flashing Arduino UNO R4s with PlatformIO
-Open `hardware/firmware` in VS Code with PlatformIO IDE installed, or use the PlatformIO CLI:
-```bash
-cd hardware/firmware
+```powershell
+cd avon-ai/hardware/firmware
 
 # Flash Device 1 (Tank T-104)
-pio run -e uno_r4_device1 --target upload
+pio run -e uno_r4_device1 -t upload
 
 # Flash Device 2 (Pipeline PL-1)
-pio run -e uno_r4_device2 --target upload
+pio run -e uno_r4_device2 -t upload
 
 # Flash Device 3 (Treatment Facility TRT-1)
-pio run -e uno_r4_device3 --target upload
+pio run -e uno_r4_device3 -t upload
+
+# Flash Device 4 (Tank T-101)
+pio run -e uno_r4_device4 -t upload
+
+# Flash Device 5 (Pipeline PL-2)
+pio run -e uno_r4_device5 -t upload
 ```
+
+*(Note: If `pio` is not in your PATH, run `& "$HOME\.platformio\penv\Scripts\pio.exe"`)*
+
+---
+
+## How to Run the Full Live System
+
+### Step 1: Start AVON AI Backend & Frontend (on your computer)
+```bash
+# Terminal 1: Backend
+cd backend && uvicorn app.main:app --reload
+
+# Terminal 2: Frontend
+cd frontend && npm run dev
+```
+
+### Step 2: Plug in the 5 Arduinos
+Plug the 5 Arduinos into your computer's USB ports (or a powered USB hub).
+Check their COM ports in [`gateway/config.json`](file:///c:/Users/avisi/Documents/GitHub/AvonAI-SecondPass/avon-ai/hardware/gateway/config.json) (e.g. `COM3` through `COM7`).
+
+### Step 3: Start the Gateway Bridge
+```powershell
+python hardware/gateway/bridge.py --config hardware/gateway/config.json
+```
+*(The bridge automatically connects to all 5 boards and starts streaming live plant data).*
+
+### Step 4: Open the Control Deck
+In another terminal, run:
+```powershell
+python hardware/gateway/control_deck.py
+```
+- Press `t` to trip P-203 duty pump (Layer 2 auto-starts standby P-204).
+- Press `d` to degrade P-203 to 45% (AVON AI recommends starting P-204).
+- Press `a` to **Approve** the recommendation.
+- Press `c` to constrain Treatment TRT-1 to 50% (both pipelines throttle).
+
+---
+
+## Person B Testing Tool
+
+Person B can test any animation on their desk without the simulation running:
+```powershell
+python hardware/tools/test_feeder.py --port COM3 --device 2 --interactive
+```
+Press `+` and `-` to raise and lower fluid flow and watch the 12×8 matrix speed adjust live.
