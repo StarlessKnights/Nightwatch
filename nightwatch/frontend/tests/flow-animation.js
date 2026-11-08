@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-expressions -- Playwright CLI evaluates this function expression. */
 // With the app running, open a dedicated session and run:
 // playwright-cli -s=flow-test open http://localhost:5173
-// playwright-cli -s=flow-test run-code --filename=avon-ai/frontend/tests/flow-animation.js
+// playwright-cli -s=flow-test run-code --filename=nightwatch/frontend/tests/flow-animation.js
 // playwright-cli -s=flow-test close
 async page => {
   const network = await page.evaluate(async () => (await fetch('/api/network')).json())
