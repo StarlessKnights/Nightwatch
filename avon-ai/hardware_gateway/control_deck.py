@@ -2,8 +2,10 @@
 """
 AVON AI - Computer Operator Control Deck
 Runs directly on the host computer alongside the web dashboard.
-Provides keyboard shortcuts and commands to inject faults, trip pumps,
-and trigger operator approval of AVON AI recommendations.
+Provides keyboard shortcuts matching the web client:
+  - Trip: Pump fault error button
+  - Wear: Health slider between 0 and 1 (bad < 0.5)
+  - Unavailability: Operator manual shut down / lockout button
 """
 
 from __future__ import annotations
@@ -35,93 +37,81 @@ except ImportError:
 
 
 class AvonControlDeck:
-    def __init__(self, api_url: str = "http://127.0.0.1:8000"):
+    def __init__(self, api_url: str = "http://127.0.0.1:8080"):
         self.api_url = api_url.rstrip("/")
         self.active_trip_id: str | None = None
-        self.active_degrade_id: str | None = None
-        self.active_trt_id: str | None = None
 
-    def trip_p203(self) -> None:
-        """Trip P-203 duty pump."""
+    def trip_pump(self, pump_id: str = "P-203") -> None:
+        """Trip button: pump error occurs."""
         if self.active_trip_id:
-            print(f"{YELLOW}Clearing P-203 trip fault...{RESET}")
+            print(f"{YELLOW}Clearing trip fault on {pump_id}...{RESET}")
             try:
                 requests.delete(f"{self.api_url}/api/faults/{self.active_trip_id}", timeout=2.0)
                 self.active_trip_id = None
-                print(f"{GREEN}P-203 restored.{RESET}")
+                print(f"{GREEN}✔ Trip cleared! Pump restored.{RESET}")
             except Exception as e:
                 print(f"{RED}Error clearing trip: {e}{RESET}")
         else:
-            print(f"{RED}{BOLD}[FAULT] TRIPPING P-203 DUTY PUMP...{RESET}")
+            print(f"{RED}{BOLD}⚡ [TRIP BUTTON] Injecting pump trip error on {pump_id}...{RESET}")
             try:
                 resp = requests.post(
                     f"{self.api_url}/api/faults",
-                    json={"type": "PUMP_TRIP", "target": "P-203", "params": {}},
+                    json={"type": "PUMP_TRIP", "target": pump_id, "params": {}},
                     timeout=2.0
                 )
                 if resp.status_code == 200:
                     self.active_trip_id = resp.json().get("id")
-                    print(f"{GREEN}P-203 tripped! Standby P-204 will auto-start after delay (Layer 2).{RESET}")
+                    print(f"{RED}{BOLD}✔ {pump_id} TRIPPED! Watch Arduino display flashing 'X'. Standby will auto-start.{RESET}")
                 else:
                     print(f"{RED}Trip failed: {resp.text}{RESET}")
             except Exception as e:
                 print(f"{RED}Network error: {e}{RESET}")
 
-    def degrade_p203(self) -> None:
-        """Degrade P-203 to 45% capacity (Scene 2)."""
-        if self.active_degrade_id:
-            print(f"{YELLOW}Restoring P-203 to 100% capacity...{RESET}")
-            try:
-                requests.delete(f"{self.api_url}/api/faults/{self.active_degrade_id}", timeout=2.0)
-                self.active_degrade_id = None
-                print(f"{GREEN}P-203 capacity restored.{RESET}")
-            except Exception as e:
-                print(f"{RED}Error clearing degrade: {e}{RESET}")
-        else:
-            print(f"{YELLOW}{BOLD}[FAULT] DEGRADING P-203 TO 45% (flow ~90 bbl/hr)...{RESET}")
-            try:
-                resp = requests.post(
-                    f"{self.api_url}/api/faults",
-                    json={"type": "PUMP_DEGRADE", "target": "P-203", "params": {"capacity_factor": 0.45}},
-                    timeout=2.0
-                )
-                if resp.status_code == 200:
-                    self.active_degrade_id = resp.json().get("id")
-                    print(f"{GREEN}P-203 degraded! Tank T-104 will begin rising toward HH limit.{RESET}")
-                else:
-                    print(f"{RED}Degrade failed: {resp.text}{RESET}")
-            except Exception as e:
-                print(f"{RED}Network error: {e}{RESET}")
+    def set_wear(self, pump_id: str = "P-203", wear_val: float = 0.45) -> None:
+        """Wear slider (0 to 1, bad < 0.5)."""
+        is_bad = wear_val < 0.5
+        color = RED if is_bad else GREEN
+        status_label = "BAD (<0.5) DEGRADED" if is_bad else "HEALTHY"
+        print(f"{color}[WEAR SLIDER] Setting {pump_id} wear/capacity to {wear_val:.2f} ({status_label})...{RESET}")
+        try:
+            resp = requests.patch(
+                f"{self.api_url}/api/assets/{pump_id}",
+                json={"capacity_factor": wear_val},
+                timeout=2.0
+            )
+            if resp.status_code == 200:
+                print(f"{GREEN}✔ Wear updated! Arduino impeller will adapt rotation speed live.{RESET}")
+            else:
+                print(f"{RED}Wear update failed: {resp.text}{RESET}")
+        except Exception as e:
+            print(f"{RED}Network error: {e}{RESET}")
 
-    def toggle_treatment_constraint(self) -> None:
-        """Constrain Treatment Facility TRT-1 to 50% intake (Scene 5)."""
-        if self.active_trt_id:
-            print(f"{YELLOW}Clearing TRT-1 constraint...{RESET}")
-            try:
-                requests.delete(f"{self.api_url}/api/faults/{self.active_trt_id}", timeout=2.0)
-                self.active_trt_id = None
-                print(f"{GREEN}TRT-1 intake restored to 100%.{RESET}")
-            except Exception as e:
-                print(f"{RED}Error clearing constraint: {e}{RESET}")
-        else:
-            print(f"{MAGENTA}{BOLD}[FAULT] CONSTRAINING TRT-1 TO 50% INTAKE...{RESET}")
-            try:
-                resp = requests.post(
-                    f"{self.api_url}/api/faults",
-                    json={"type": "TREATMENT_CONSTRAINT", "target": "TRT-1", "params": {"intake_factor": 0.5}},
+    def toggle_unavailability(self, pump_id: str = "P-204") -> None:
+        """Unavailability button: Operator manual shut down / lockout."""
+        print(f"{YELLOW}[OPERATOR LOCKOUT] Toggling availability on {pump_id}...{RESET}")
+        try:
+            # Query current availability
+            net_resp = requests.get(f"{self.api_url}/api/network", timeout=2.0)
+            if net_resp.status_code == 200:
+                pumps = net_resp.json().get("snapshot", {}).get("state", {}).get("pumps", {})
+                curr_avail = pumps.get(pump_id, {}).get("available", True)
+                new_avail = not curr_avail
+                resp = requests.patch(
+                    f"{self.api_url}/api/assets/{pump_id}",
+                    json={"available": new_avail},
                     timeout=2.0
                 )
                 if resp.status_code == 200:
-                    self.active_trt_id = resp.json().get("id")
-                    print(f"{GREEN}TRT-1 constrained! PL-1 & PL-2 will back up both tanks.{RESET}")
+                    st_str = "AVAILABLE" if new_avail else "OPERATOR SHUT DOWN (LOCKED OUT)"
+                    print(f"{GREEN}✔ {pump_id} is now {st_str}. Arduino will show lockout slash.{RESET}")
                 else:
-                    print(f"{RED}Constraint failed: {resp.text}{RESET}")
-            except Exception as e:
-                print(f"{RED}Network error: {e}{RESET}")
+                    print(f"{RED}Failed: {resp.text}{RESET}")
+        except Exception as e:
+            print(f"{RED}Network error: {e}{RESET}")
 
     def approve_recommendation(self) -> None:
-        """Operator Approval: Approves AVON AI's lowest-cost feasible action."""
-        print(f"{CYAN}{BOLD}[OPERATOR ACTION] Requesting AVON AI recommendation...{RESET}")
+        """Operator approval button for AVON AI recommendations."""
+        print(f"{CYAN}{BOLD}[OPERATOR APPROVE] Checking recommendations...{RESET}")
         try:
             resp = requests.get(f"{self.api_url}/api/recommendation", timeout=2.0)
             if resp.status_code != 200:
@@ -138,67 +128,61 @@ class AvonControlDeck:
                 print(f"{YELLOW}No action required. Plant operating within limits.{RESET}")
                 return
 
-            print(f" Best Option: {GREEN}{BOLD}{best_id}{RESET} (Estimated Savings: ${savings:,.2f})")
+            print(f" Approving: {GREEN}{BOLD}{best_id}{RESET} (Avoided Loss: ${savings:,.2f})")
             app_resp = requests.post(f"{self.api_url}/api/recommendation/{best_id}/approve", timeout=2.0)
             if app_resp.status_code == 200:
-                print(f"{GREEN}{BOLD}✔ APPROVED: Operator approved {best_id}! Plant recovering...{RESET}")
+                print(f"{GREEN}{BOLD}✔ APPROVED: Operator approved {best_id}! Watch standby pump spin up.{RESET}")
             else:
                 print(f"{RED}Approval rejected: {app_resp.text}{RESET}")
-
         except Exception as e:
             print(f"{RED}Error: {e}{RESET}")
 
     def status(self) -> None:
-        """Print current plant status."""
         try:
             resp = requests.get(f"{self.api_url}/api/network", timeout=2.0)
             if resp.status_code != 200:
                 return
             snap = resp.json().get("snapshot", {})
             st = snap.get("state", {})
-            tanks = st.get("tanks", {})
             pumps = st.get("pumps", {})
-            pipes = st.get("pipelines", {})
-            trt = st.get("treatment", {})
-            alarms = st.get("alarms", [])
+            tanks = st.get("tanks", {})
 
-            print(f"\n{BOLD}=== AVON AI LIVE TELEMETRY (t={st.get('t_min', 0)} min) ==={RESET}")
-            print(f" Tanks:     T-104: {tanks.get('T-104', {}).get('volume', 0)} bbl | T-101: {tanks.get('T-101', {}).get('volume', 0)} bbl")
-            print(f" Pumps:     P-203 ({pumps.get('P-203', {}).get('run_state')} cf={pumps.get('P-203', {}).get('capacity_factor')}) | P-204 ({pumps.get('P-204', {}).get('run_state')}) | P-201 ({pumps.get('P-201', {}).get('run_state')})")
-            print(f" Pipelines: PL-1: {pipes.get('PL-1', {}).get('flow', 0)} bbl/hr | PL-2: {pipes.get('PL-2', {}).get('flow', 0)} bbl/hr")
-            print(f" Treatment: TRT-1: {trt.get('TRT-1', {}).get('flow', 0)} bbl/hr (factor={trt.get('TRT-1', {}).get('intake_factor')})")
-            print(f" Alarms:    {len(alarms)} active alarms\n")
+            print(f"\n{BOLD}=== LIVE PUMP TELEMETRY (t={st.get('t_min', 0)} min) ==={RESET}")
+            for pid in ["P-203", "P-204", "P-201"]:
+                p = pumps.get(pid, {})
+                cf = p.get("capacity_factor", 1.0)
+                wear_badge = f"{RED}WEAR {cf*100:.0f}% (<0.5 BAD){RESET}" if cf < 0.5 else f"{GREEN}WEAR {cf*100:.0f}%{RESET}"
+                avail_badge = f"{GREEN}AVAILABLE{RESET}" if p.get("available") else f"{RED}LOCKED OUT{RESET}"
+                print(f" {BOLD}{pid}{RESET} ({p.get('role')}): {p.get('run_state')} | Flow: {p.get('flow', 0):.0f} bbl/hr | {wear_badge} | {avail_badge}")
+            print(f" Tanks: T-104: {tanks.get('T-104', {}).get('volume', 0):.0f} bbl | T-101: {tanks.get('T-101', {}).get('volume', 0):.0f} bbl\n")
         except Exception as e:
             print(f"{RED}Status query failed: {e}{RESET}")
 
-    def reset_or_ack(self) -> None:
-        """Acknowledge alarms or reset simulation."""
+    def reset_sim(self) -> None:
         try:
             requests.post(f"{self.api_url}/api/sim/reset", timeout=2.0)
             self.active_trip_id = None
-            self.active_degrade_id = None
-            self.active_trt_id = None
-            print(f"{GREEN}Simulation reset to t=0.{RESET}")
+            print(f"{GREEN}✔ Simulation reset to t=0.{RESET}")
         except Exception as e:
             print(f"{RED}Reset failed: {e}{RESET}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="AVON AI Operator Control Deck")
-    parser.add_argument("--api", default="http://127.0.0.1:8000", help="AVON AI REST API URL")
+    parser.add_argument("--api", default="http://127.0.0.1:8080", help="AVON AI REST API URL")
     args = parser.parse_args()
 
     deck = AvonControlDeck(api_url=args.api)
 
     print("=" * 65)
-    print(f"{BOLD}{CYAN}AVON AI - COMPUTER OPERATOR CONTROL DECK{RESET}")
+    print(f"{BOLD}{CYAN}AVON AI - 3-PUMP OPERATOR HARDWARE TEST DECK{RESET}")
     print("=" * 65)
-    print(f" [{BOLD}t{RESET}] Toggle E-Stop / Trip on P-203 (Scene 4)")
-    print(f" [{BOLD}d{RESET}] Toggle Degradation on P-203 (45% capacity, Scene 2)")
-    print(f" [{BOLD}c{RESET}] Toggle Treatment Constraint on TRT-1 (Scene 5)")
-    print(f" [{BOLD}a{RESET}] {GREEN}{BOLD}APPROVE AVON AI Recommendation{RESET} (Operator action)")
-    print(f" [{BOLD}s{RESET}] Print Live Plant Status")
-    print(f" [{BOLD}r{RESET}] Reset Simulation")
+    print(f" [{BOLD}t{RESET}] ⚡ TRIP BUTTON on P-203 (Injects pump error)")
+    print(f" [{BOLD}w{RESET}] 🎚️ WEAR SLIDER on P-203 (Set wear between 0 and 1)")
+    print(f" [{BOLD}u{RESET}] 🔒 UNAVAILABILITY BUTTON on P-204 (Operator shut down)")
+    print(f" [{BOLD}a{RESET}] {GREEN}{BOLD}✔ APPROVE BUTTON{RESET} (Operator approves recommendation)")
+    print(f" [{BOLD}s{RESET}] 📊 Live Pump Status")
+    print(f" [{BOLD}r{RESET}] 🔄 Reset Simulation")
     print(f" [{BOLD}q{RESET}] Quit")
     print("=" * 65 + "\n")
 
@@ -206,17 +190,19 @@ def main():
         try:
             cmd = input(f"{BOLD}AvonControl > {RESET}").strip().lower()
             if cmd in ("t", "trip"):
-                deck.trip_p203()
-            elif cmd in ("d", "degrade"):
-                deck.degrade_p203()
-            elif cmd in ("c", "constrain"):
-                deck.toggle_treatment_constraint()
+                deck.trip_pump("P-203")
+            elif cmd in ("w", "wear"):
+                val_str = input("Enter wear value (0.0 to 1.0, bad < 0.5) [default 0.45]: ").strip()
+                val = float(val_str) if val_str else 0.45
+                deck.set_wear("P-203", max(0.0, min(1.0, val)))
+            elif cmd in ("u", "unavail"):
+                deck.toggle_unavailability("P-204")
             elif cmd in ("a", "approve"):
                 deck.approve_recommendation()
             elif cmd in ("s", "status"):
                 deck.status()
             elif cmd in ("r", "reset"):
-                deck.reset_or_ack()
+                deck.reset_sim()
             elif cmd in ("q", "quit", "exit"):
                 break
         except (EOFError, KeyboardInterrupt):

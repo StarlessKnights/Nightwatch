@@ -22,6 +22,7 @@ export const api = {
   loadScenario: (id: string) => call('POST', `/api/scenarios/${id}/load`),
   injectFault: (type: string, target: string, params: Json) => call('POST', '/api/faults', { type, target, params }),
   clearFault: (id: string) => call('DELETE', `/api/faults/${id}`),
+  patchAsset: (id: string, patch: { capacity_factor?: number; available?: boolean }) => call('PATCH', `/api/assets/${id}`, patch),
   approve: (optionId: string) => call('POST', `/api/recommendation/${encodeURIComponent(optionId)}/approve`),
   ack: (id: string) => call('POST', `/api/alarms/${encodeURIComponent(id)}/ack`),
   patchConfig: (patch: Json) => call('PATCH', '/api/config', patch),

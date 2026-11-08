@@ -35,8 +35,87 @@ function FaultCard({ type, spec, network, run }: { type: string; spec: Network['
 }
 
 export function FaultPanel({ env, network, run }: Props) {
+  const pumps = env.state.pumps
+
   return (
     <div className="drawer">
+      {/* Interactive Pump Hardware Controls (Real-Time Hardware Testing) */}
+      <h3>Pump Controls (Hardware Test)</h3>
+      <div className="hint" style={{ marginBottom: 8 }}>Trip, Wear slider (0–1), and Operator Shutdown.</div>
+      {Object.entries(pumps).map(([pid, p]) => {
+        const tripFault = env.state.faults.find((f) => f.type === 'PUMP_TRIP' && f.target === pid && f.active)
+        const isTripped = p.run_state === 'TRIPPED' || !!tripFault
+        const wear = p.capacity_factor ?? 1.0
+        const isBadWear = wear < 0.5
+        const borderCol = isTripped ? 'var(--crit)' : !p.available ? '#555' : isBadWear ? 'var(--warn)' : 'var(--ok)'
+
+        return (
+          <div key={pid} className="card" style={{ borderLeft: `4px solid ${borderCol}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <b>{pid} <span className="hint">({p.role})</span></b>
+              <span className={`chip ${isTripped ? 'crit' : !p.available ? '' : p.run_state === 'RUNNING' ? 'ok' : ''}`}>
+                {!p.available ? 'UNAVAILABLE' : p.run_state}
+              </span>
+            </div>
+
+            {/* 1. Trip Button (Error occurring in pump) */}
+            <div style={{ marginTop: 6 }}>
+              <button
+                className="danger"
+                style={{ width: '100%', padding: '4px 8px', fontSize: '11px', background: isTripped ? '#8b2020' : undefined }}
+                onClick={() => run(async () => {
+                  if (tripFault) {
+                    await api.clearFault(tripFault.id)
+                  } else {
+                    await api.injectFault('PUMP_TRIP', pid, {})
+                  }
+                })}
+              >
+                {isTripped ? '⚡ Reset Trip Error' : '⚡ Trip Pump (Fault)'}
+              </button>
+            </div>
+
+            {/* 2. Wear Slider (0 to 1, Bad < 0.5) */}
+            <div style={{ marginTop: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--muted)' }}>
+                <span>Wear Health:</span>
+                <span style={{ color: isBadWear ? '#f87171' : '#4ade80', fontWeight: 'bold' }}>
+                  {(wear * 100).toFixed(0)}% {isBadWear ? '⚠ Bad (<0.5)' : 'OK'}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={wear}
+                style={{ width: '100%', margin: '4px 0' }}
+                onChange={(e) => {
+                  const val = Number(e.target.value)
+                  run(() => api.patchAsset(pid, { capacity_factor: val }))
+                }}
+              />
+            </div>
+
+            {/* 3. Availability Button (Operator manual shut down / lockout) */}
+            <div style={{ marginTop: 6 }}>
+              <button
+                style={{
+                  width: '100%',
+                  padding: '4px 8px',
+                  fontSize: '11px',
+                  background: !p.available ? '#4a3b1a' : 'var(--panel2)',
+                  borderColor: !p.available ? 'var(--warn)' : 'var(--border)'
+                }}
+                onClick={() => run(() => api.patchAsset(pid, { available: !p.available }))}
+              >
+                {!p.available ? '🔓 Restore Availability' : '🔒 Shut Down (Operator Lockout)'}
+              </button>
+            </div>
+          </div>
+        )
+      })}
+
       <h3>Active faults</h3>
       {env.state.faults.length === 0 && <div className="hint">None</div>}
       {env.state.faults.map((f) => (
@@ -45,7 +124,8 @@ export function FaultPanel({ env, network, run }: Props) {
           <button onClick={() => run(() => api.clearFault(f.id))}>Clear</button>
         </div>
       ))}
-      <h3>Inject fault</h3>
+
+      <h3>Inject catalog fault</h3>
       {Object.entries(network.fault_catalog).map(([type, spec]) => (
         <FaultCard key={type} type={type} spec={spec} network={network} run={run} />
       ))}

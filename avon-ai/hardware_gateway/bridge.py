@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """
-AVON AI - Computer Hardware Gateway Bridge (5-Pump Visualizer Network)
+AVON AI - Computer Hardware Gateway Bridge (3-Pump Active / 5-Pump Ready)
 Connects to the AVON AI simulation backend via WebSocket (/ws/sim)
-and streams real-time telemetry to 5 Arduino UNO R4s acting as physical pumps.
+and streams real-time telemetry to physical Arduino UNO R4s acting as pumps.
 
-Pump Assignment:
+Pump Allocation:
   Device 1: Pump P-203 (Duty Pump on Tank T-104 -> PL-1)
   Device 2: Pump P-204 (Standby Pump on Tank T-104 -> PL-1)
   Device 3: Pump P-201 (Duty Pump on Tank T-101 -> PL-2)
-  Device 4: Pump P-SRC1 (Wellhead Inflow Lift Pump -> T-104)
-  Device 5: Pump P-SRC2 (Wellhead Inflow Lift Pump -> T-101)
+  (Future) Device 4: Pump P-SRC1 (Wellhead Inflow 1 -> T-104)
+  (Future) Device 5: Pump P-SRC2 (Wellhead Inflow 2 -> T-101)
 
-Physical Fault Tolerance:
-  - Each Arduino serial channel has independent write isolation.
-  - If any Arduino is unplugged, the remaining 4 pumps continue running uninterrupted.
-  - Automatic non-blocking hot-plug reconnect when re-plugged.
+State Rules:
+  - Trip: Error occurred within pump -> State 4 (TRIPPED, flashing 'X')
+  - Wear: Slider 0..1; if wear < 0.5 -> State 3 (DEGRADED, slow/labored rotation)
+  - Unavailable: Operator shut down / lockout -> State 5 (UNAVAILABLE, lockout slash)
+  - Running: Healthy -> State 1 (RUNNING, smooth rapid spin & fluid flow)
+  - Starting: Auto-changeover warmup -> State 2 (STARTING, pulsing hub)
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ import platform
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 try:
     import serial
@@ -66,7 +68,7 @@ class PumpChannel:
 
 
 class FaultTolerantPumpManager:
-    """Manages 5 independent serial links for the 5 physical pump nodes."""
+    """Manages independent serial links for active pump nodes."""
 
     def __init__(self, cfg: dict, dry_run: bool = False):
         self.cfg = cfg
@@ -75,6 +77,7 @@ class FaultTolerantPumpManager:
         self.baud = s_cfg.get("baud_rate", 115200)
         self.timeout = s_cfg.get("timeout_s", 0.05)
         self.cooldown = s_cfg.get("reconnect_cooldown_s", 3.0)
+        self.active_devices: List[int] = s_cfg.get("active_devices", [1, 2, 3])
         self.channels: Dict[int, PumpChannel] = {}
         self._init_channels()
 
@@ -86,7 +89,7 @@ class FaultTolerantPumpManager:
             else self.cfg.get("serial", {}).get("linux_ports", {})
         )
         pumps_cfg = self.cfg.get("pumps", {})
-        for i in range(1, 6):
+        for i in self.active_devices:
             p_info = pumps_cfg.get(f"device{i}", {})
             pid = p_info.get("id", f"P-{i}")
             pname = p_info.get("name", f"Pump {i}")
@@ -110,7 +113,7 @@ class FaultTolerantPumpManager:
             self.dry_run = True
             return
 
-        logger.info("Connecting to physical Arduino serial ports (5 pumps)...")
+        logger.info(f"Connecting to physical Arduino serial ports ({len(self.active_devices)} active pumps)...")
         for dev_id, ch in self.channels.items():
             self._try_connect(ch)
 
@@ -171,7 +174,7 @@ class FaultTolerantPumpManager:
             return "[SIMULATED / DRY-RUN]"
         tokens = []
         now = time.monotonic()
-        for i in range(1, 6):
+        for i in self.active_devices:
             ch = self.channels[i]
             if ch.is_online:
                 tokens.append(f"{ch.pump_id}:ON")
@@ -193,7 +196,7 @@ class FaultTolerantPumpManager:
 
 
 class PumpStateExtractor:
-    """Extracts state for all 5 physical pumps from simulation telemetry."""
+    """Extracts state for physical pumps from simulation telemetry."""
 
     def __init__(self, cfg: dict):
         self.seq = 0
@@ -203,7 +206,15 @@ class PumpStateExtractor:
         return self.seq
 
     def _pump_code(self, p_data: dict) -> int:
-        """0: stopped, 1: running, 2: starting, 3: degraded, 4: tripped, 5: unavailable"""
+        """
+        Pump state codes:
+          0: stopped, 1: running, 2: starting, 3: degraded, 4: tripped, 5: unavailable
+        Rules:
+          - Trip: Pump error -> code 4
+          - Unavailable: Operator shut down / lockout -> code 5
+          - Wear < 0.5: Bad wear / degraded -> code 3
+          - Running: Healthy -> code 1
+        """
         if not p_data.get("available", True):
             return 5
         st = p_data.get("run_state", "STOPPED").upper()
@@ -213,7 +224,7 @@ class PumpStateExtractor:
             return 2
         if st == "RUNNING":
             cf = p_data.get("eff_capacity_factor", p_data.get("capacity_factor", 1.0))
-            return 3 if cf < 0.95 else 1
+            return 3 if cf < 0.5 else 1
         return 0
 
     def _limiting_code(self, limited_by: str | None) -> int:
@@ -237,12 +248,11 @@ class PumpStateExtractor:
         st_code = self._pump_code(p)
         lim_code = self._limiting_code(p.get("limited_by"))
 
-        # Determine alarm level
         al = 0
-        if st_code == 4:  # Tripped
-            al = 2
-        elif st_code == 3:  # Degraded
-            al = 1
+        if st_code == 4:
+            al = 2  # High alarm on trip
+        elif st_code == 3:
+            al = 1  # Advisory on wear < 0.5
 
         return {
             "v": 1,
@@ -259,7 +269,7 @@ class PumpStateExtractor:
         }
 
     def extract_inflow_pump(self, dev_id: int, source_id: str, feeds_tank: str, state: dict) -> dict:
-        """Extracts telemetry packet for a wellhead inflow pump (P-SRC1, P-SRC2)."""
+        """Extracts telemetry packet for a wellhead inflow pump (SRC-1, SRC-2)."""
         sources = state.get("sources", {})
         tanks = state.get("tanks", {})
         src = sources.get(source_id, {})
@@ -269,10 +279,9 @@ class PumpStateExtractor:
         rate = src.get("flow", 0.0) if not is_shut_in else 0.0
         curtail_pct = src.get("curtailment_pct", 0.0)
 
-        # State mapping for inflow pump
         if is_shut_in:
-            st_code = 4  # Tripped / Shut in by interlock
-            al = 3       # Critical HH alarm
+            st_code = 4  # Tripped by HH interlock
+            al = 3
         elif curtail_pct > 5.0:
             st_code = 3  # Degraded / curtailed
             al = 1
@@ -317,7 +326,8 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
 
     extractor = PumpStateExtractor(cfg)
 
-    logger.info("Starting AVON AI 5-Pump Hardware Bridge...")
+    active_devs = pump_mgr.active_devices
+    logger.info(f"Starting AVON AI Hardware Bridge ({len(active_devs)} active pumps: {active_devs})...")
     logger.info(f"Target WebSocket: {ws_url}")
 
     while True:
@@ -338,28 +348,35 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
                         if not state:
                             continue
 
-                        # Extract packets for all 5 physical pumps
-                        p1 = extractor.extract_pump(1, "P-203", state)
-                        p2 = extractor.extract_pump(2, "P-204", state)
-                        p3 = extractor.extract_pump(3, "P-201", state)
-                        p4 = extractor.extract_inflow_pump(4, "SRC-1", "T-104", state)
-                        p5 = extractor.extract_inflow_pump(5, "SRC-2", "T-101", state)
-
-                        # Send to each Arduino pump node independently
-                        pump_mgr.send_packet(1, p1)
-                        pump_mgr.send_packet(2, p2)
-                        pump_mgr.send_packet(3, p3)
-                        pump_mgr.send_packet(4, p4)
-                        pump_mgr.send_packet(5, p5)
+                        # Extract & send only for active devices
+                        if 1 in active_devs:
+                            p1 = extractor.extract_pump(1, "P-203", state)
+                            pump_mgr.send_packet(1, p1)
+                        if 2 in active_devs:
+                            p2 = extractor.extract_pump(2, "P-204", state)
+                            pump_mgr.send_packet(2, p2)
+                        if 3 in active_devs:
+                            p3 = extractor.extract_pump(3, "P-201", state)
+                            pump_mgr.send_packet(3, p3)
+                        if 4 in active_devs:
+                            p4 = extractor.extract_inflow_pump(4, "SRC-1", "T-104", state)
+                            pump_mgr.send_packet(4, p4)
+                        if 5 in active_devs:
+                            p5 = extractor.extract_inflow_pump(5, "SRC-2", "T-101", state)
+                            pump_mgr.send_packet(5, p5)
 
                         now = time.monotonic()
                         if now - last_log_time >= 2.0:
                             health = pump_mgr.get_health_summary()
+                            pumps = state.get("pumps", {})
+                            p203 = pumps.get("P-203", {})
+                            p204 = pumps.get("P-204", {})
+                            p201 = pumps.get("P-201", {})
                             logger.info(
                                 f"Tick t={state.get('t_min')}m | "
-                                f"P-203: {p1['flow']} bbl/hr (st={p1['state']}) | "
-                                f"P-204: {p2['flow']} bbl/hr (st={p2['state']}) | "
-                                f"P-201: {p3['flow']} bbl/hr (st={p3['state']}) | "
+                                f"P-203: {p203.get('flow', 0)} bbl/hr (wear={p203.get('capacity_factor', 1):.2f}) | "
+                                f"P-204: {p204.get('run_state')} | "
+                                f"P-201: {p201.get('flow', 0)} bbl/hr | "
                                 f"Pumps: [{health}]"
                             )
                             last_log_time = now
@@ -380,7 +397,7 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AVON AI 5-Pump Hardware Bridge")
+    parser = argparse.ArgumentParser(description="AVON AI Hardware Pump Bridge")
     parser.add_argument("--config", default="hardware_gateway/config.json", help="Path to config.json")
     parser.add_argument("--dry-run", action="store_true", help="Simulate serial writes without hardware Arduinos")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose debug logging")
