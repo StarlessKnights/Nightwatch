@@ -16,7 +16,7 @@ from .models import Config, Recommendation, load_config, patch_config
 from .network import Topology, impact, load_topology
 from .scenarios import list_scenarios, load_scenario
 from .sim import step
-from .state import ADVISORY, OPERATOR, SYSTEM, Event, Fault, SimState
+from .state import ADVISORY, OPERATOR, RUNNING, STOPPED, SYSTEM, TRIPPED, Event, Fault, SimState
 
 DEFAULT_SCENARIO = "scene1_normal"
 
@@ -36,6 +36,12 @@ class Session:
     # ---------- lifecycle ----------
     def load(self, scenario_id: str, announce: bool = True) -> None:
         state, cfg, meta = load_scenario(scenario_id, self.topo, self.cfg)
+        # Ensure sim starts off without pumps activated (STOPPED), available=True, hardware_online=False
+        new_pumps = {
+            pid: replace(p, run_state=STOPPED, available=True, hardware_online=False)
+            for pid, p in state.pumps.items()
+        }
+        state = replace(state, pumps=new_pumps)
         self.cfg, self.state, self.meta = cfg, state, meta
         self.run_id = uuid4().hex
         self.scenario_id = scenario_id
@@ -66,6 +72,18 @@ class Session:
 
     def reset(self) -> None:
         self.load(self.scenario_id)
+
+    def start_duty_pumps(self) -> None:
+        """Starts available duty pumps when the simulation starts."""
+        new_pumps = dict(self.state.pumps)
+        changed = False
+        for pid, p in self.state.pumps.items():
+            if p.role == "duty" and p.available and p.run_state == STOPPED:
+                new_pumps[pid] = replace(p, run_state=RUNNING)
+                changed = True
+        if changed:
+            self.state = replace(self.state, pumps=new_pumps)
+            self._changed()
 
     def _changed(self) -> None:
         self.revision += 1
@@ -265,11 +283,13 @@ class Session:
             if old_online:
                 self.log(Event(self.state.t_min, "HARDWARE", "HARDWARE_DISCONNECTED", pump_id, {"dev": dev_id}))
         else:
-            # Arduino connected: turn on / restore availability
+            # Arduino connected: restore availability (hardware online)
             ps = replace(ps, hardware_online=True, available=True)
             changes.append("available=True")
-            if ps.run_state == "STOPPED":
-                ps = replace(ps, run_state="RUNNING")
+            # Never automatically turn on backup/standby pumps!
+            # Only duty pumps activate when connected
+            if ps.role != "standby" and ps.run_state in ("STOPPED", "STARTING"):
+                ps = replace(ps, run_state="RUNNING", start_ready_at_min=None)
                 changes.append("run_state=RUNNING")
             if not old_online:
                 self.log(Event(self.state.t_min, "HARDWARE", "HARDWARE_CONNECTED", pump_id, {"dev": dev_id}))

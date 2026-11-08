@@ -58,6 +58,38 @@ export function FaultPanel({ env, network, run }: Props) {
               </span>
             </div>
 
+            {/* Hardware Presence & Sensor Badges */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: 6, fontSize: '11px', flexWrap: 'wrap' }}>
+              <span style={{ 
+                color: p.hardware_online ? '#4ade80' : '#888',
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}>
+                <span style={{ 
+                  display: 'inline-block',
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  background: p.hardware_online ? '#22c55e' : '#555'
+                }} />
+                {p.hardware_online ? 'HW Connected' : 'HW Offline'}
+              </span>
+
+              {p.temperature_c != null && (
+                <span style={{ color: 'var(--muted)', background: 'var(--panel2)', padding: '1px 5px', borderRadius: 4 }}>
+                  🌡️ {p.temperature_c.toFixed(1)}°C
+                </span>
+              )}
+
+              {p.knob_factor != null && (
+                <span style={{ color: '#38bdf8', background: 'var(--panel2)', padding: '1px 5px', borderRadius: 4 }}>
+                  🎛️ Knob {(p.knob_factor * 100).toFixed(0)}%
+                </span>
+              )}
+            </div>
+
             {/* 1. Trip Button (Error occurring in pump) */}
             <div style={{ marginTop: 6 }}>
               <button

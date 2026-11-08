@@ -501,6 +501,28 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
             logger.debug(f"Failed to post hardware status ({payload.get('pump')}): {e}")
             return False
 
+    async def trigger_pump_trip(client: Any, pump_id: str) -> bool:
+        """Injects or resets a PUMP_TRIP fault via the FastAPI backend."""
+        try:
+            faults_list = current_state.get("faults", [])
+            existing_trip = next((f for f in faults_list if f.get("type") == "PUMP_TRIP" and f.get("target") == pump_id and f.get("active", True)), None)
+            if existing_trip:
+                fid = existing_trip.get("id")
+                if fid:
+                    logger.info(f"[BUTTON RESET] Clearing trip error on {pump_id} (fault {fid})")
+                    if HAS_HTTPX and hasattr(client, "delete"):
+                        await client.delete(f"{api_url}/api/faults/{fid}", timeout=2.0)
+                    return True
+
+            logger.info(f"[BUTTON TRIP] Tripping {pump_id} via physical Modulino Button!")
+            payload = {"type": "PUMP_TRIP", "target": pump_id, "params": {"reason": "Modulino hardware button trip"}}
+            if HAS_HTTPX and hasattr(client, "post"):
+                await client.post(f"{api_url}/api/faults", json=payload, timeout=2.0)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to trigger pump trip for {pump_id}: {e}")
+            return False
+
     async def tx_stream_task():
         """Continuous 10 Hz telemetry loop ensuring Arduino watchdogs never expire."""
         logger.info("Continuous 10 Hz hardware transmission stream started.")
@@ -598,7 +620,7 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
                         last_k_val = last_sent_knob.get(target_pump, None)
                         last_k_tx = last_sent_knob_time.get(target_pump, 0.0)
                         k_delta = abs(knob_factor - last_k_val) if last_k_val is not None else 1.0
-                        if k_delta >= 0.015 or (now - last_k_tx >= 1.0):
+                        if k_delta >= 0.015 or (now - last_k_tx >= 3.0):
                             payload_knob = {
                                 "dev": target_dev,
                                 "pump": target_pump,
@@ -614,7 +636,7 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
                     last_pkt = last_sent_telemetry.get(dev, {})
                     last_tx = last_sent_time.get(dev, 0.0)
                     temp_delta = abs((temp_c or 0) - (last_pkt.get("temp") or 0)) if temp_c is not None else 0
-                    if (temp_delta >= 0.5) or (now - last_tx >= 1.0):
+                    if (temp_delta >= 0.5) or (now - last_tx >= 3.0):
                         payload_local = {
                             "dev": dev,
                             "pump": pump,
@@ -626,6 +648,13 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
                         await post_hardware_status(client, payload_local)
                         last_sent_telemetry[dev] = {"temp": temp_c}
                         last_sent_time[dev] = now
+
+                    # 3. Dispatch physical Modulino Button trip event (Button A -> P-201, B -> P-203, C -> P-204)
+                    trip_dev = pkt.get("trip_dev")
+                    trip_pump = pkt.get("trip_pump") or (PUMPS.get(trip_dev) if trip_dev in PUMPS else None)
+                    if trip_pump:
+                        logger.info(f"[BUTTON EVENT] Modulino button triggered for {trip_pump} (Device {trip_dev})")
+                        await trigger_pump_trip(client, trip_pump)
 
                 await asyncio.sleep(0.04)  # 25 Hz check
         finally:

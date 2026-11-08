@@ -23,6 +23,11 @@ void HalPeripherals::begin() {
     telemetry.knob = 1000;
   }
 
+  hasModulinoButtons = modulinoButtons.begin();
+  if (hasModulinoButtons) {
+    telemetry.hasButtons = true;
+  }
+
   hasModulinoThermo = modulinoThermo.begin();
   hasModulinoBuzzer = modulinoBuzzer.begin();
   hasModulinoLight = modulinoLight.begin();
@@ -85,6 +90,33 @@ void HalPeripherals::sampleSensors(unsigned long now, PumpState pumpState) {
       pumpKnobPos[targetDev] = pos;
       telemetry.knob = (uint16_t)(pos * 10); // scale 0..100 to 0..1000
       telemetry.knobChanged = true;
+    }
+  }
+
+  // 1b. Modulino Buttons: Button A -> Trip P-201, Button B -> Trip P-203, Button C -> Trip P-204
+  if (hasModulinoButtons) {
+    if (modulinoButtons.update()) {
+      bool btnA = (modulinoButtons.isPressed('A') == HIGH);
+      bool btnB = (modulinoButtons.isPressed('B') == HIGH);
+      bool btnC = (modulinoButtons.isPressed('C') == HIGH);
+
+      if (btnA && !lastBtnA) {
+        telemetry.tripDev = 1;
+        telemetry.buttonPressed = true;
+        if (hasModulinoBuzzer) modulinoBuzzer.tone(500, 100);
+      } else if (btnB && !lastBtnB) {
+        telemetry.tripDev = 2;
+        telemetry.buttonPressed = true;
+        if (hasModulinoBuzzer) modulinoBuzzer.tone(500, 100);
+      } else if (btnC && !lastBtnC) {
+        telemetry.tripDev = 3;
+        telemetry.buttonPressed = true;
+        if (hasModulinoBuzzer) modulinoBuzzer.tone(500, 100);
+      }
+
+      lastBtnA = btnA;
+      lastBtnB = btnB;
+      lastBtnC = btnC;
     }
   }
 
@@ -197,12 +229,13 @@ void HalPeripherals::update(unsigned long now, PumpState pumpState) {
 }
 
 void HalPeripherals::emitTelemetryIfDue(unsigned long now, uint8_t devId, const char *assignedPump, PumpState pumpState) {
-  // Emit on significant knob/sensor delta OR every 500ms heartbeat (2 Hz)
-  bool due = telemetry.knobChanged || ((uint32_t)(now - lastTxMs) >= 500);
+  // Emit on significant knob/sensor delta, button press, OR every 500ms heartbeat (2 Hz)
+  bool due = telemetry.knobChanged || telemetry.buttonPressed || ((uint32_t)(now - lastTxMs) >= 500);
   if (!due) return;
 
   lastTxMs = now;
   telemetry.knobChanged = false;
+  telemetry.buttonPressed = false;
 
   Serial.print("{\"v\":1,\"dev\":");
   Serial.print(devId);
@@ -217,6 +250,15 @@ void HalPeripherals::emitTelemetryIfDue(unsigned long now, uint8_t devId, const 
     Serial.print(pumpNameForDev(targetDev));
     Serial.print("\",\"knob\":");
     Serial.print(telemetry.knob);
+  }
+
+  if (telemetry.tripDev > 0) {
+    Serial.print(",\"trip_dev\":");
+    Serial.print(telemetry.tripDev);
+    Serial.print(",\"trip_pump\":\"");
+    Serial.print(pumpNameForDev(telemetry.tripDev));
+    Serial.print("\"");
+    telemetry.tripDev = 0;
   }
 
   Serial.print(",\"temp\":");

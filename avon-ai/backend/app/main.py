@@ -91,6 +91,7 @@ def get_scenarios():
 @app.post("/api/sim/start")
 async def sim_start():
     session.running = True
+    session.start_duty_pumps()
     await broadcast()
     return {"running": True}
 

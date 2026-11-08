@@ -66,6 +66,7 @@ function PumpNode({ data }: NodeProps<Node<D>>) {
         <button className="info nodrag" title="Pump detail" onClick={(e) => { e.stopPropagation(); data.onDetails?.(data.node.id) }}>ⓘ</button>
       </div>
       <div className="sub">{!p.available ? 'UNAVAILABLE' : p.run_state === 'STOPPED' && p.role === 'standby' ? 'STANDBY' : p.run_state}</div>
+      {p.hardware_online && <div className="badge ok" style={{ fontSize: 9 }}>HW ●</div>}
       {d?.w_est != null && (
         <div className={`badge ${d.code === 'NONE' ? '' : 'warn'}`} title={d.text}>
           w {(d.w_est * 100).toFixed(0)}% {DIAG_ICON[d.code] ?? ''}

@@ -12,9 +12,12 @@ struct PeripheralTelemetry {
   float temperature_c = 25.0f;  // degrees Celsius
   uint16_t light = 500;         // ambient reading
   int16_t distance_mm = -1;     // Modulino Distance (-1 if not present)
+  uint8_t tripDev = 0;          // 0 = none, 1=P-201, 2=P-203, 3=P-204
   bool knobChanged = false;
+  bool buttonPressed = false;
   bool tempAlert = false;
   bool hasKnob = false;
+  bool hasButtons = false;
 };
 
 class HalPeripherals {
@@ -33,6 +36,7 @@ class HalPeripherals {
 
   // Modulino Qwiic Modules
   ModulinoKnob modulinoKnob;
+  ModulinoButtons modulinoButtons;
   ModulinoThermo modulinoThermo;
   ModulinoBuzzer modulinoBuzzer;
   ModulinoLight modulinoLight;
@@ -41,11 +45,16 @@ class HalPeripherals {
 
   // Hardware presence flags detected on the Qwiic bus
   bool hasModulinoKnob = false;
+  bool hasModulinoButtons = false;
   bool hasModulinoThermo = false;
   bool hasModulinoBuzzer = false;
   bool hasModulinoLight = false;
   bool hasModulinoDistance = false;
   bool hasModulinoPixels = false;
+
+  bool lastBtnA = false;
+  bool lastBtnB = false;
+  bool lastBtnC = false;
 
   // Channel switching for single Modulino Knob
   uint8_t targetDev = 1;                // 1=P-201, 2=P-203, 3=P-204
