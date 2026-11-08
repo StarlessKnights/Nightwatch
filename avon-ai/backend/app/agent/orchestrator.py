@@ -14,6 +14,7 @@ from .incidents import briefing
 from .monitor import observe
 from .proposals import ActionSpec, AgentAnswer
 from .settings import Settings
+from .team import COORDINATOR, FLOW, PUMP, Investigation
 from .tools import Context
 
 
@@ -22,6 +23,10 @@ class Agent:
         self.session, self.settings = session, settings or Settings.from_env()
         self.audit = Audit(self.settings.audit_path)
         self.gateway = gateway or Gateway(self.settings, self.audit)
+        self.team = None
+        # Isolate cooldowns so a failing specialist does not silence the coordinator or operator chat.
+        self.team_gateways = {role: Gateway(self.settings, self.audit, self.gateway.transport)
+                              for role in (FLOW, PUMP, COORDINATOR)}
         self.enabled = self.settings.enabled
         self.wake = asyncio.Event()
         self.worker = None
@@ -72,6 +77,10 @@ class Agent:
             if proposal["status"] in ("PENDING", "VALIDATED", "APPROVED"):
                 self.audit.record(self.run_id, "proposal", {**proposal, "status": "REJECTED", "reasons": ["Scenario reset"]})
         self.run_id = self.session.run_id
+        if self.model_task and not self.model_task.done():
+            self.model_task.cancel()
+        self.team = None
+        self.last_observation = None
         self.incidents, self.proposals, self.messages, self.scenarios, self.hypotheses = [], [], [], [], []
         self.evidence, self.signature, self.event_cursor = {}, None, 0
         self.last_model_at = 0
@@ -119,7 +128,17 @@ class Agent:
                 for v in value.values(): scan(v)
             elif isinstance(value, list):
                 for v in value: scan(v)
-        scan([self.incidents, self.proposals, self.messages, self.scenarios, self.hypotheses])
+        scan([self.incidents, self.proposals, self.messages, self.scenarios, self.hypotheses,
+              self.team.snapshot() if self.team else {}])
+        # A retained coordinator citation may refer to a handoff from an earlier cycle.
+        todo = list(references)
+        while todo:
+            evidence = self.evidence.get(todo.pop())
+            if evidence and evidence["source"] == "agent_handoff":
+                for child in evidence["value"]["evidence_ids"]:
+                    if child not in references:
+                        references.add(child)
+                        todo.append(child)
         self.evidence = {k: v for k, v in self.evidence.items() if k in references or k in ctx.evidence}
         return True
 
@@ -154,7 +173,7 @@ class Agent:
 
     async def analyze_observation(self, ctx, groups, signature):
         new = await asyncio.to_thread(lambda: [briefing(ctx, g) for g in groups])
-        if ctx.run_id != self.session.run_id:
+        if ctx.run_id != self.session.run_id or not self.enabled:
             return
         matched = set()
         for item in new:
@@ -171,45 +190,37 @@ class Agent:
                            post_incident_summary="Observed conditions cleared. Review the retained evidence and automatic response history.")
                 self.audit.record(ctx.run_id, "incident_resolved", old)
         self.incidents = self.incidents[:40]
+        trigger = "Condition change · " + ", ".join(r for group in groups for r in group["roots"]) if groups else "Network observation"
+        team = Investigation(ctx, self.settings, trigger, bool(groups))
+        self.team = team
         self.publish_context(ctx)
         for item in new:
             self.audit.record(ctx.run_id, "incident", item)
-        if not groups or not self.gateway.configured:
-            return
-        if time.monotonic() - self.last_model_at < self.settings.min_interval_s or (self.model_task and not self.model_task.done()):
+        if self.gateway.configured and (time.monotonic() - self.last_model_at < self.settings.min_interval_s or (self.model_task and not self.model_task.done())):
             # Keep a lightweight periodic retry for the latest coalesced condition.
             self.pending_model = True
             return
         self.pending_model = False
         self.last_model_at = time.monotonic()
-        seed = {"run_id": ctx.run_id, "as_of_min": ctx.state.t_min,
-                "incidents": [{k: v for k, v in i.items() if k not in ("automatic", "concerns")} for i in new],
-                "evidence": list(ctx.evidence.values())}
-        self.model_task = asyncio.create_task(self.enrich(ctx, new, groups, signature, seed))
+        if self.gateway.configured:
+            self.model_task = asyncio.create_task(self.review_team(ctx, team, signature, new))
+        else:
+            await self.review_team(ctx, team, signature, new)
 
-    async def enrich(self, ctx, new, groups, signature, seed):
-        answer = None
-        try:
-            answer = await self.gateway.analyze(ctx, "Investigate these incidents. Use measured trends and event order to distinguish observed changes from possible causes. Identify what the operator should check next. Propose an alternative only if it addresses a gap in the ranked options.", seed,
-                                                complex_task=any(i["severity"] == "critical" for i in new) or len(groups) > 1,
-                                                activity=self.record_activity)
-        except GatewayError as exc:
-            self.record_activity("Nemotron fallback", str(exc))
-        except Exception:
-            self.record_activity("Nemotron fallback", "Unexpected provider failure")
-        if ctx.run_id != self.session.run_id:
+    async def review_team(self, ctx, team, signature, incidents):
+        def current():
+            return (self.enabled and self.team is team and self.session.run_id == ctx.run_id
+                    and observe(self.session)[0] == signature)
+        await team.run(ctx, self.team_gateways, current, self.publish_context)
+        if not current():
             return
-        if observe(self.session)[0] != signature:
-            self.record_activity("Outdated model result discarded", "A material network condition changed")
-            self.signature = None
-            return
-        if answer:
-            for item in new:
-                item.update(source="NEMOTRON", interpretations=[x.model_dump() for x in answer.interpretations],
-                            concerns=item["concerns"] + [x.model_dump() for x in answer.concerns], question=answer.question)
-                item["evidence_ids"] = list(dict.fromkeys(item["evidence_ids"] + answer.evidence_ids))
-                self.audit.record(ctx.run_id, "incident", item)
+        report = team.coordinator
+        if len(incidents) == 1 and report.source == "Nemotron":
+            incidents[0].update(source="NEMOTRON", interpretations=report.interpretations)
+            self.audit.record(ctx.run_id, "incident", incidents[0])
         self.publish_context(ctx)
+        self.audit.record(ctx.run_id, "investigation", team.snapshot())
+        self.record_activity("Coordinator brief ready", team.trigger)
 
     def submit_chat(self, message):
         if not self.enabled:
@@ -245,8 +256,14 @@ class Agent:
                         event = ctx.brief["recent_events"][0]
                         readings.append(ctx.fact("get_event_history", f"events.{event['id']}", event, event["text"]))
                 source = "NEMOTRON"
+                latest = self.team
+                reports = []
+                if latest and latest.run_id == ctx.run_id and latest.coordinator.status == "Brief ready":
+                    # Copy the dated specialist reports into this chat's citation scope.
+                    reports = [latest.handoff(ctx, r) for r in (latest.flow, latest.pump, latest.coordinator)]
                 try:
-                    answer = await self.gateway.analyze(ctx, message, {"evidence": readings if rundown else seed, "as_of_min": ctx.state.t_min,
+                    answer = await self.gateway.analyze(ctx, "As the Coordinator, answer the operator: " + message,
+                        {"evidence": readings if rundown else seed, "team_reports": reports, "as_of_min": ctx.state.t_min,
                         "previous_messages": [{"role": m["role"], "text": m.get("text", ""), "question": m.get("question")} for m in self.messages[-6:]]},
                         complex_task=True, activity=self.record_activity,
                         evidence_only=rundown,
@@ -366,6 +383,7 @@ class Agent:
                 "provider_error": self.gateway.last_error, "error": self.error, "audit_error": self.audit.error,
                 "last_observation_min": self.last_observation, "incidents": self.incidents, "proposals": self.proposals,
                 "shift_brief": shift_brief(self.session) if self.enabled else None,
+                "team": self.team.snapshot() if self.enabled and self.team else None,
                 "activity": self.activity[-40:], "messages": self.messages, "scenarios": self.scenarios,
                 "hypotheses": self.hypotheses, "evidence": self.evidence,
                 "chat_busy": bool(self.chat_task and not self.chat_task.done())}

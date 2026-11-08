@@ -15,6 +15,15 @@ export interface Evidence {
   source: string; path: string; label: string; value: unknown
 }
 export interface Interpretation { text: string; evidence_ids: string[] }
+export interface TeamReport {
+  role: string; model: string; observation: string; evidence_ids: string[]
+  status: string; source: string | null; interpretations: Interpretation[]; error: string | null
+}
+export interface Investigation {
+  id: string; run_id: string; revision: number; t_min: number; trigger: string
+  reports: TeamReport[]
+  events: { role: string; status: string; elapsed_s: number; source: string | null }[]
+}
 export interface Incident {
   id: string; title: string; status: string; severity: string; t_min: number; first_seen_min: number
   affected_assets: string[]; roots: string[]; evidence_ids: string[]; summary: string; attention: string
@@ -40,6 +49,7 @@ export interface ScenarioResult {
   forecast: Record<string, { time_to_HH: number | null; status: string }>
 }
 export interface AgentState {
+  team: Investigation | null
   shift_brief: ShiftBrief | null
   run_id: string; enabled: boolean; status: string; provider: string; model: string; reasoning_model: string
   provider_error: string | null; error: string | null; audit_error: string | null; last_observation_min: number | null
