@@ -29,6 +29,7 @@ import os
 import platform
 import sys
 import time
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -61,6 +62,16 @@ class SerialPortLink:
     last_reconnect_attempt: float = 0.0
     packets_sent: int = 0
     errors_caught: int = 0
+    device_id: Optional[int] = None
+
+
+PUMPS = {1: "P-201", 2: "P-203", 3: "P-204"}
+HELLO = re.compile(r"^AVON\|HELLO\|v=1\|dev=([1-3])\|profile=pump\|fw=")
+
+
+def parse_hello(line: str) -> Optional[int]:
+    match = HELLO.match(line.strip())
+    return int(match.group(1)) if match else None
 
 
 class FaultTolerantSerialBus:
@@ -84,7 +95,7 @@ class FaultTolerantSerialBus:
         port_dict = (
             self.cfg.get("serial", {}).get("windows_ports", {})
             if is_windows
-            else self.cfg.get("serial", {}).get("linux_ports", {})
+            else self.cfg.get("serial", {}).get("macos_ports" if platform.system() == "Darwin" else "linux_ports", {})
         )
         for dev_key in [f"device{i}" for i in self.active_devices]:
             p = port_dict.get(dev_key)
@@ -97,7 +108,7 @@ class FaultTolerantSerialBus:
                 for p_info in serial.tools.list_ports.comports():
                     p_name = p_info.device
                     # Include known Arduino ports or USB serial
-                    if p_name not in configured_ports:
+                    if (p_info.vid == 0x2341 or "usbmodem" in p_name.lower() or "ttyacm" in p_name.lower()) and p_name not in configured_ports:
                         configured_ports.append(p_name)
             except Exception as e:
                 logger.debug(f"Port scan exception: {e}")
@@ -122,10 +133,25 @@ class FaultTolerantSerialBus:
     def _try_connect(self, link: SerialPortLink) -> bool:
         link.last_reconnect_attempt = time.monotonic()
         try:
-            ser = serial.Serial(link.port, self.baud, timeout=self.timeout)
+            ser = serial.Serial(link.port, self.baud, timeout=0.1)
+            deadline = time.monotonic() + 2.5
+            next_probe = 0.0
+            device_id = None
+            while time.monotonic() < deadline:
+                if time.monotonic() >= next_probe:
+                    ser.write(b"AVON|IDENTIFY\n")
+                    ser.flush()
+                    next_probe = time.monotonic() + 0.4
+                device_id = parse_hello(ser.readline().decode("utf-8", errors="replace"))
+                if device_id:
+                    break
+            if device_id not in self.active_devices or any(other.is_online and other.device_id == device_id for other in self.links.values() if other is not link):
+                ser.close()
+                return False
             link.ser = ser
+            link.device_id = device_id
             link.is_online = True
-            logger.info(f"[ONLINE] Arduino connected on {link.port} at {self.baud} baud.")
+            logger.info(f"[ONLINE] Device {device_id} ({PUMPS[device_id]}) on {link.port}.")
             return True
         except Exception as e:
             link.ser = None
@@ -139,7 +165,7 @@ class FaultTolerantSerialBus:
         try:
             for p_info in serial.tools.list_ports.comports():
                 p_name = p_info.device
-                if p_name not in self.links:
+                if (p_info.vid == 0x2341 or "usbmodem" in p_name.lower() or "ttyacm" in p_name.lower()) and p_name not in self.links:
                     logger.info(f"[DISCOVERY] New USB serial device detected: {p_name}")
                     link = SerialPortLink(port=p_name)
                     self.links[p_name] = link
@@ -148,7 +174,7 @@ class FaultTolerantSerialBus:
             pass
 
     def broadcast_packet(self, payload: dict) -> None:
-        """Transmits a single NDJSON packet to all connected Arduinos with per-port fault isolation."""
+        """Transmit only to the Arduino identified by the packet device ID."""
         line = json.dumps(payload, separators=(',', ':')) + "\n"
         encoded = line.encode("utf-8")
         now = time.monotonic()
@@ -165,13 +191,14 @@ class FaultTolerantSerialBus:
 
         # Isolated transmission
         for port, link in list(self.links.items()):
-            if link.is_online and link.ser:
+            if link.is_online and link.ser and link.device_id == payload.get("dev"):
                 try:
                     link.ser.write(encoded)
                     link.ser.flush()
                     link.packets_sent += 1
                 except Exception as e:
                     link.is_online = False
+                    link.device_id = None
                     link.errors_caught += 1
                     link.last_reconnect_attempt = now
                     logger.warning(
@@ -191,7 +218,7 @@ class FaultTolerantSerialBus:
         now = time.monotonic()
         for port, link in self.links.items():
             if link.is_online:
-                tokens.append(f"{port}:ON")
+                tokens.append(f"{port}:D{link.device_id}")
             else:
                 retry_in = max(0.0, self.cooldown - (now - link.last_reconnect_attempt))
                 tokens.append(f"{port}:OFF({retry_in:.0f}s)")
@@ -206,6 +233,7 @@ class FaultTolerantSerialBus:
                     pass
                 link.ser = None
                 link.is_online = False
+                link.device_id = None
         logger.info("All Arduino serial links closed.")
 
 
@@ -273,6 +301,8 @@ class PumpStateExtractor:
         w_int = int(round(max(0.0, min(1.0, w_float)) * 1000))
 
         st_code = self._pump_code(p, w_int)
+        if any(f.get("type") == "PUMP_TRIP" and f.get("target") == pump_id and f.get("active", True) for f in state.get("faults", [])) and st_code != 5:
+            st_code = 4
         lim_code = self._limiting_code(p.get("limited_by"))
         lvl, cap = self._get_tank_level_cap(pump_id, state)
         available = 1 if (p.get("available", True) and st_code != 5) else 0
@@ -293,12 +323,6 @@ class PumpStateExtractor:
             "available": available,
             "lvl": lvl,
             "cap": cap,
-            "flow": int(round(flow)),
-            "max": 200,
-            "rf": int(round(w_float * 1000)),
-            "lim": lim_code,
-            "al": al,
-            "il": 0
         }
 
 
@@ -337,6 +361,10 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
     }
 
     stop_event = asyncio.Event()
+    last_packets: Dict[int, dict] = {}
+    if cfg.get("demo_ui", {}).get("enabled", True):
+        from demo_ui import start_demo_server
+        start_demo_server(cfg.get("demo_ui", {}).get("port", 8090), cfg.get("backend", {}).get("api_url", "http://127.0.0.1:8080"), bus, current_state, last_packets)
 
     async def tx_stream_task():
         """Continuous 10 Hz telemetry loop ensuring Arduino watchdogs never expire."""
@@ -355,12 +383,15 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
             # Broadcast packets for each active device
             if 1 in active_devs:
                 p1 = extractor.extract_pump(1, "P-201", current_state)
+                last_packets[1] = p1
                 bus.broadcast_packet(p1)
             if 2 in active_devs:
                 p2 = extractor.extract_pump(2, "P-203", current_state)
+                last_packets[2] = p2
                 bus.broadcast_packet(p2)
             if 3 in active_devs:
                 p3 = extractor.extract_pump(3, "P-204", current_state)
+                last_packets[3] = p3
                 bus.broadcast_packet(p3)
 
             # Log status ticker every 2 seconds
