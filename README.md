@@ -20,9 +20,12 @@ Additionally, NIGHTWATCH allows for facility operators to run “What-If” scen
 
 As a result, when emergencies occur, operators have instant insight into all systems affected as well as tailored suggestions on further actions ultimately to reduce downtime and keep losses low.
 
-
-
 ## How we built it
+The first step was to create the initial architecture of the facility. We ideated with Claude to develop a robust node-based graph representation that was able to express states inside and between different nodes. Then, we expanded it to include cascading effects (like how a degraded cooling pump can block heat distribution which ultimately can cause HH failures at the heating level). Finally, we created the decision engine which uses the internal logic of the facility to roll out potential faults and then create solutions to suggest to the operators.
+
+The next step was to develop a custom intelligence system that was capable of monitoring the entire system and reporting back to the user with valuable interpretations. At the start, we leveraged Nemotron for this. We developed a single agent to watch over the entire pipeline, report any disruptions, and act as a general historian of the entire pipeline so that the technician could ask it questions. However as the project progressed we realized a single agent wouldn’t be able to encapsulate the entire complexity of the project. We proceeded to develop various sub-agents, each one looking over a specific part of the data center. These agents are continuously monitoring the data center, catching and reporting disruptions on their side. All these reports are given to a coordinator agent, which compiles all this data and provides a report, which references specific parts of the data center for the technician to go over. 
+
+Finally, we were able to integrate our hardware by connecting three Arduino R4 WiFis by having them represent the tank, pump and output, using the LED matrix display to show flow capacity, flow rate, and the amount of processes. We implemented a physical interface to the Nightwatch dashboard by using Arduino-compatible knobs and buttons for manually setting the above mentioned parameters. This allows the technician to more accurately visualize the process of data center incidents while being able to simulate outages by removing any one or more of the boards, which is then reflected in the actual dashboard.
 
 ## Challenges we ran into
 One of the most frustrating (but rewarding!) challenges we ran into was configuring our Arduino R4 microcontrollers to interact with and react to changes made on the web app. Sometimes, the Arduino matrices would not display the correct animations, the computer would not use the correct COM ports, or the web app would not be able to recognize the Arduinos at all. We got around this by implementing an automatic arduino COM port detector and flasher, allowing us to guarantee that we would always have working and reliable connections.
@@ -30,7 +33,6 @@ One of the most frustrating (but rewarding!) challenges we ran into was configur
 
 ## Accomplishments that we're proud of
 Overall, we are incredibly proud of NIGHTWATCH Intelligence as a multi-agent system that runs continuously in the background, constantly evaluating the entire system infrastructure to ensure the data center operates efficiently. The system consists of three agents, each with specific responsibilities, primarily monitoring factors such as temperature, cooling, and workload placement. Each agent iterates through our graph and provides the main agent (the coordinator agent) with a summary of its respective area of the data center, allowing technicians to make more informed decisions. We are particularly proud of this feature because it can operate continuously as a maintenance system for the data center while accurately reporting and citing the sources of any disruptions as they arise.
-
 
 
 ## What we learned
@@ -41,4 +43,5 @@ Additionally, we experienced a lot of success with our implementation of NIGHTWA
 
 ## What's next for Nightwatch
 As of now, the NIGHTWATCH software is entirely simulation based. However, it is based on real industry concepts thus a continuation of this project would involve real integration with on-site sensors to first get telemetry flowing through both our Decision Engine and NIGHTWATCH Intelligence and then tailor solutions towards the facility’s needs to bring the accelerated insights directly to the datacenters that need them most.
+
 
