@@ -1,6 +1,6 @@
 """Tests for hardware presence, physical connectivity coupling, and sensor telemetry."""
 import pytest
-from starlette.testclient import TestClient
+from fastapi.testclient import TestClient
 
 from app.main import app, session
 from app.state import RUNNING, STARTING, STOPPED, TRIPPED
@@ -122,3 +122,57 @@ def test_api_hardware_endpoints():
     assert summary["nodes"]["1"]["temperature_c"] == 38.5
     assert summary["nodes"]["1"]["knob_factor"] == 0.75
     assert summary["active_pumps"]["CHP-1"]["online"] is True
+
+    # 3. Unknown pump returns 404
+    bad_resp = client.post("/api/hardware/status", json={
+        "dev": 99,
+        "pump": "NON-EXISTENT-PUMP",
+        "online": True
+    })
+    assert bad_resp.status_code == 404
+
+
+def test_standby_pump_connect_does_not_auto_run():
+    # CHP-2 is standby
+    assert session.state.pumps["CHP-2"].role == "standby"
+    assert session.state.pumps["CHP-2"].run_state == STOPPED
+
+    # Hardware connection of standby pump must mark available/online but NOT run
+    res = session.update_hardware_node(dev_id=3, pump_id="CHP-2", online=True)
+    assert res["run_state"] == STOPPED
+    assert res["available"] is True
+    assert session.state.pumps["CHP-2"].hardware_online is True
+    assert session.state.pumps["CHP-2"].run_state == STOPPED
+
+
+def test_knob_boundary_clamping():
+    # Negative knob clamps to 0.0
+    session.update_hardware_node(dev_id=2, pump_id="CHP-1", online=True, knob=-0.5)
+    assert session.state.pumps["CHP-1"].health == 0.0
+    assert session.state.pumps["CHP-1"].knob_factor == 0.0
+
+    # Knob > 1.0 clamps to 1.0
+    session.update_hardware_node(dev_id=2, pump_id="CHP-1", online=True, knob=1.85)
+    assert session.state.pumps["CHP-1"].health == 1.0
+    assert session.state.pumps["CHP-1"].knob_factor == 1.0
+
+
+def test_thermal_hysteresis_boundaries():
+    # 84.9 C should NOT trip (threshold is 85.0 C)
+    session.update_hardware_node(dev_id=2, pump_id="CHP-1", online=True, temperature_c=84.9)
+    assert session.state.pumps["CHP-1"].run_state != TRIPPED
+    assert not any("Thermal overheat" in str(f.params.get("reason", "")) for f in session.state.faults)
+
+    # 85.0 C should trip
+    session.update_hardware_node(dev_id=2, pump_id="CHP-1", online=True, temperature_c=85.0)
+    assert session.state.pumps["CHP-1"].run_state == TRIPPED
+    assert any("Thermal overheat" in str(f.params.get("reason", "")) for f in session.state.faults)
+
+    # 65.1 C does NOT clear yet (cooldown threshold is 65.0 C)
+    session.update_hardware_node(dev_id=2, pump_id="CHP-1", online=True, temperature_c=65.1)
+    assert any("Thermal overheat" in str(f.params.get("reason", "")) for f in session.state.faults)
+
+    # 65.0 C clears
+    session.update_hardware_node(dev_id=2, pump_id="CHP-1", online=True, temperature_c=65.0)
+    assert not any("Thermal overheat" in str(f.params.get("reason", "")) for f in session.state.faults)
+
