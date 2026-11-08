@@ -41,7 +41,7 @@ export function FaultPanel({ env, network, run }: Props) {
     <div className="drawer">
       {/* Interactive Pump Hardware Controls (Real-Time Hardware Testing) */}
       <h3>Pump Controls (Hardware Test)</h3>
-      <div className="hint" style={{ marginBottom: 8 }}>Trip, Wear slider (0–1), and Operator Shutdown.</div>
+      <div className="hint" style={{ marginBottom: 8 }}>Trip, Wear slider (0–1), Shutdown, and Pump Reset.</div>
       {Object.entries(pumps).map(([pid, p]) => {
         const tripFault = env.state.faults.find((f) => f.type === 'PUMP_TRIP' && f.target === pid && f.active)
         const isTripped = p.run_state === 'TRIPPED' || !!tripFault
@@ -110,6 +110,31 @@ export function FaultPanel({ env, network, run }: Props) {
                 onClick={() => run(() => api.patchAsset(pid, { available: !p.available }))}
               >
                 {!p.available ? '🔓 Restore Availability' : '🔒 Shut Down (Operator Lockout)'}
+              </button>
+            </div>
+
+            {/* 4. Reset Button (Restore this specific pump to pristine 100% normal) */}
+            <div style={{ marginTop: 6 }}>
+              <button
+                style={{
+                  width: '100%',
+                  padding: '3px 8px',
+                  fontSize: '11px',
+                  background: 'var(--panel)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text)',
+                  cursor: 'pointer'
+                }}
+                title="Clears faults on this pump, resets wear to 100%, and restores availability"
+                onClick={() => run(async () => {
+                  const targetedFaults = env.state.faults.filter((f) => f.target === pid)
+                  for (const f of targetedFaults) {
+                    await api.clearFault(f.id)
+                  }
+                  await api.patchAsset(pid, { capacity_factor: 1.0, available: true })
+                })}
+              >
+                🔄 Reset {pid} to Normal (100%)
               </button>
             </div>
           </div>

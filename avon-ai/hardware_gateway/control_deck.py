@@ -6,6 +6,7 @@ Provides keyboard shortcuts matching the web client:
   - Trip: Pump fault error button
   - Wear: Health slider between 0 and 1 (bad < 0.5)
   - Unavailability: Operator manual shut down / lockout button
+  - Reset: Per-pump reset button to restore a pump to 100% normal
 """
 
 from __future__ import annotations
@@ -90,7 +91,6 @@ class AvonControlDeck:
         """Unavailability button: Operator manual shut down / lockout."""
         print(f"{YELLOW}[OPERATOR LOCKOUT] Toggling availability on {pump_id}...{RESET}")
         try:
-            # Query current availability
             net_resp = requests.get(f"{self.api_url}/api/network", timeout=2.0)
             if net_resp.status_code == 200:
                 pumps = net_resp.json().get("snapshot", {}).get("state", {}).get("pumps", {})
@@ -106,6 +106,32 @@ class AvonControlDeck:
                     print(f"{GREEN}✔ {pump_id} is now {st_str}. Arduino will show lockout slash.{RESET}")
                 else:
                     print(f"{RED}Failed: {resp.text}{RESET}")
+        except Exception as e:
+            print(f"{RED}Network error: {e}{RESET}")
+
+    def reset_single_pump(self, pump_id: str) -> None:
+        """Reset button for a specific pump: restores wear to 1.0, available to true, and clears its faults."""
+        print(f"{CYAN}[RESET PUMP] Resetting {pump_id} to 100% healthy normal state...{RESET}")
+        try:
+            # 1. Clear any active faults targeting this pump
+            net_resp = requests.get(f"{self.api_url}/api/network", timeout=2.0)
+            if net_resp.status_code == 200:
+                faults = net_resp.json().get("snapshot", {}).get("state", {}).get("faults", [])
+                for f in faults:
+                    if f.get("target") == pump_id:
+                        requests.delete(f"{self.api_url}/api/faults/{f['id']}", timeout=2.0)
+                        print(f" Cleared fault: {f['type']} on {pump_id}")
+
+            # 2. Patch wear to 1.0 and available to true
+            resp = requests.patch(
+                f"{self.api_url}/api/assets/{pump_id}",
+                json={"capacity_factor": 1.0, "available": True},
+                timeout=2.0
+            )
+            if resp.status_code == 200:
+                print(f"{GREEN}{BOLD}✔ {pump_id} fully reset to Normal (100% health, available).{RESET}")
+            else:
+                print(f"{RED}Reset patch failed: {resp.text}{RESET}")
         except Exception as e:
             print(f"{RED}Network error: {e}{RESET}")
 
@@ -180,9 +206,12 @@ def main():
     print(f" [{BOLD}t{RESET}] ⚡ TRIP BUTTON on P-203 (Injects pump error)")
     print(f" [{BOLD}w{RESET}] 🎚️ WEAR SLIDER on P-203 (Set wear between 0 and 1)")
     print(f" [{BOLD}u{RESET}] 🔒 UNAVAILABILITY BUTTON on P-204 (Operator shut down)")
+    print(f" [{BOLD}r1{RESET}] 🔄 RESET P-203 to 100% Normal")
+    print(f" [{BOLD}r2{RESET}] 🔄 RESET P-204 to 100% Normal")
+    print(f" [{BOLD}r3{RESET}] 🔄 RESET P-201 to 100% Normal")
     print(f" [{BOLD}a{RESET}] {GREEN}{BOLD}✔ APPROVE BUTTON{RESET} (Operator approves recommendation)")
     print(f" [{BOLD}s{RESET}] 📊 Live Pump Status")
-    print(f" [{BOLD}r{RESET}] 🔄 Reset Simulation")
+    print(f" [{BOLD}r{RESET}] 🔄 Reset Complete Simulation")
     print(f" [{BOLD}q{RESET}] Quit")
     print("=" * 65 + "\n")
 
@@ -197,6 +226,12 @@ def main():
                 deck.set_wear("P-203", max(0.0, min(1.0, val)))
             elif cmd in ("u", "unavail"):
                 deck.toggle_unavailability("P-204")
+            elif cmd in ("r1", "reset p203"):
+                deck.reset_single_pump("P-203")
+            elif cmd in ("r2", "reset p204"):
+                deck.reset_single_pump("P-204")
+            elif cmd in ("r3", "reset p201"):
+                deck.reset_single_pump("P-201")
             elif cmd in ("a", "approve"):
                 deck.approve_recommendation()
             elif cmd in ("s", "status"):
