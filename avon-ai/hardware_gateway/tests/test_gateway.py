@@ -9,14 +9,23 @@ from demo_ui import perform_action
 
 
 class FakeSerial:
-    def __init__(self, hello):
+    def __init__(self, hello=b""):
         self.hello = hello
         self.writes = []
         self.is_open = True
+        self.rx_buffer = []
 
     def readline(self):
-        line, self.hello = self.hello, b""
-        return line
+        if self.hello:
+            line, self.hello = self.hello, b""
+            return line
+        if self.rx_buffer:
+            return self.rx_buffer.pop(0)
+        return b""
+
+    @property
+    def in_waiting(self):
+        return sum(len(line) for line in self.rx_buffer)
 
     def write(self, data):
         self.writes.append(data)
@@ -31,6 +40,10 @@ class FakeSerial:
 class GatewayTests(unittest.TestCase):
     def test_hello_and_identity_routing(self):
         self.assertEqual(parse_hello("AVON|HELLO|v=1|dev=2|profile=pump|fw=0.2.0-pump"), 2)
+        self.assertEqual(
+            parse_hello("AVON|HELLO|v=1|dev=1|pump=P-201|profile=pump|fw=0.3.0-hil|caps=matrix,knob,temp,light,buzzer"),
+            1
+        )
         self.assertIsNone(parse_hello("AVON|HELLO|v=1|dev=5|profile=PUMP|fw=0.2.0"))
         cfg = {"serial": {"active_devices": [1, 2, 3], "auto_detect": False, "macos_ports": {}}}
         with patch("bridge.serial.tools.list_ports.comports", return_value=[]):
@@ -43,6 +56,48 @@ class GatewayTests(unittest.TestCase):
             bus.connect_all()
         bus.broadcast_packet({"v": 1, "dev": 2, "pump": "P-203"})
         self.assertEqual([len(fake[p].writes) for p in devices], [0, 0, 1])
+
+    def test_presence_callback_on_connect_and_disconnect(self):
+        events = []
+        cfg = {"serial": {"active_devices": [1, 2, 3], "auto_detect": False, "macos_ports": {}}}
+        with patch("bridge.serial.tools.list_ports.comports", return_value=[]):
+            bus = FaultTolerantSerialBus(cfg, on_presence_change=lambda d, on: events.append((d, on)))
+
+        from bridge import SerialPortLink
+        link = SerialPortLink(port="COM4")
+        bus.links["COM4"] = link
+        fake = FakeSerial(b"AVON|HELLO|v=1|dev=1|pump=P-201|profile=pump|fw=0.3.0-hil|caps=matrix\n")
+        with patch("bridge.serial.Serial", return_value=fake):
+            connected = bus._try_connect(link)
+
+        self.assertTrue(connected)
+        self.assertEqual(events, [(1, True)])
+
+        # Trigger disconnect
+        bus._disconnect_link(link, "Unplugged")
+        self.assertFalse(link.is_online)
+        self.assertIsNone(link.device_id)
+        self.assertEqual(events, [(1, True), (1, False)])
+
+    def test_upstream_telemetry_reading(self):
+        cfg = {"serial": {"active_devices": [1, 2, 3], "auto_detect": False}}
+        with patch("bridge.serial.tools.list_ports.comports", return_value=[]):
+            bus = FaultTolerantSerialBus(cfg)
+
+        from bridge import SerialPortLink
+        link = SerialPortLink(port="COM5", is_online=True, device_id=2)
+        fake = FakeSerial()
+        fake.rx_buffer.append(b'{"v":1,"dev":2,"pump":"P-203","online":1,"knob":750,"temp":38.2,"light":512}\n')
+        link.ser = fake
+        bus.links["COM5"] = link
+
+        packets = bus.read_upstream_telemetry()
+        self.assertEqual(len(packets), 1)
+        pkt = packets[0]
+        self.assertEqual(pkt["dev"], 2)
+        self.assertEqual(pkt["pump"], "P-203")
+        self.assertEqual(pkt["knob"], 750)
+        self.assertEqual(pkt["temp"], 38.2)
 
     def test_packet_health_level_and_trip_priority(self):
         extractor = PumpStateExtractor({})

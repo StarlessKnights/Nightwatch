@@ -5,10 +5,12 @@
 #include "protocol.h"
 #include "framebuffer.h"
 #include "profiles.h"
+#include "hal_peripherals.h"
 
 ArduinoLEDMatrix matrix;
 DisplayState state;
 Framebuffer fb;
+HalPeripherals hal;
 char line[INPUT_LINE_MAX+1]; size_t lineLength=0; bool dropping=false;
 unsigned long lastFrame=0; uint8_t phase=0;
 
@@ -16,7 +18,9 @@ static void acceptLine(unsigned long now){
   line[lineLength]='\0';
   if(strcmp(line,"AVON|IDENTIFY")==0){
     Serial.print("AVON|HELLO|v=1|dev=");Serial.print(DEVICE_ID);
-    Serial.print("|profile=pump|fw=");Serial.println(FIRMWARE_VERSION);
+    Serial.print("|pump=");Serial.print(ASSIGNED_PUMP);
+    Serial.print("|profile=pump|fw=");Serial.print(FIRMWARE_VERSION);
+    Serial.println("|caps=matrix,knob,temp,light,buzzer");
     lineLength=0;return;
   }
   ParseResult result=parsePacket(line,DEVICE_ID,state,now);
@@ -60,12 +64,20 @@ static void printApiTestFrame(){
 void setup(){
   pinMode(LED_BUILTIN,OUTPUT);digitalWrite(LED_BUILTIN,LOW);
   Serial.begin(SERIAL_BAUD);matrix.begin();matrix.clear();
+  hal.begin();
   const char *profile="pump";
-  Serial.print("AVON|HELLO|v=1|dev=");Serial.print(DEVICE_ID);Serial.print("|profile=");Serial.print(profile);Serial.print("|fw=");Serial.println(FIRMWARE_VERSION);
+  Serial.print("AVON|HELLO|v=1|dev=");Serial.print(DEVICE_ID);
+  Serial.print("|pump=");Serial.print(ASSIGNED_PUMP);
+  Serial.print("|profile=");Serial.print(profile);
+  Serial.print("|fw=");Serial.print(FIRMWARE_VERSION);
+  Serial.println("|caps=matrix,knob,temp,light,buzzer");
 }
 
 void loop(){
-  unsigned long now=millis();serialPump(now);
+  unsigned long now=millis();
+  serialPump(now);
+  hal.update(now, state.pump);
+  hal.emitTelemetryIfDue(now, DEVICE_ID, ASSIGNED_PUMP, state.pump);
 #if API_TEST
   if((uint32_t)(now-lastFrame)>=2000){
     lastFrame=now;buildApiTestFrame();static bool usePacked=false;usePacked=!usePacked;
