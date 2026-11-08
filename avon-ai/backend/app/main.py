@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import faults, messages
-from .models import AssetPatch, EngineRequest, FaultRequest, SpeedRequest
+from .models import AssetPatch, EngineRequest, FaultRequest, HardwareStatusRequest, SpeedRequest
 from .scenarios import list_scenarios
 from .session import Session
 from .agent.orchestrator import Agent
@@ -167,11 +167,43 @@ async def delete_fault(fault_id: str):
 @app.patch("/api/assets/{asset_id}")
 async def patch_asset(asset_id: str, req: AssetPatch):
     try:
-        session.patch_asset(asset_id, req.health if req.health is not None else req.capacity_factor, req.available)
+        session.patch_asset(
+            asset_id=asset_id,
+            health=req.health if req.health is not None else req.capacity_factor,
+            available=req.available,
+            hardware_online=req.hardware_online,
+            temperature_c=req.temperature_c,
+            knob_factor=req.knob_factor,
+            hardware_telemetry=req.hardware_telemetry,
+            run_state=req.run_state,
+        )
     except KeyError:
         raise HTTPException(404, "unknown pump")
     await broadcast()
     return {"ok": True}
+
+
+@app.post("/api/hardware/status")
+async def update_hardware_status(req: HardwareStatusRequest):
+    try:
+        res = session.update_hardware_node(
+            dev_id=req.dev,
+            pump_id=req.pump,
+            online=req.online,
+            knob=req.knob,
+            temperature_c=req.temperature_c,
+            light_level=req.light_level,
+            telemetry=req.telemetry,
+        )
+    except KeyError:
+        raise HTTPException(404, f"unknown pump {req.pump}")
+    await broadcast()
+    return {"ok": True, "result": res}
+
+
+@app.get("/api/hardware/status")
+def get_hardware_status():
+    return session.get_hardware_summary()
 
 
 @app.get("/api/assets/{asset_id}/history")
