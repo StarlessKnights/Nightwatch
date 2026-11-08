@@ -182,3 +182,166 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .network-info-popover { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; width: 320px; max-width: calc(100vw - 24px); padding: 10px 14px; background: var(--panel, #0b1522); border: 1px solid var(--line, #26364a); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .4); color: var(--muted); font-size: 12px; }
 .network-info-popover p { margin: 7px 0; }
 .network-info-popover .process-stages { padding: 0; margin: 8px 0; }
+
+
+/* ==================== NIGHTWATCH Enhancements: Logo, Stars, and Sprites ==================== */
+
+.lunar-moon-logo {
+  filter: drop-shadow(0 0 8px rgba(192, 132, 252, 0.5));
+  flex-shrink: 0;
+}
+
+.brand-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-sub {
+  font-size: 10px;
+  color: var(--muted, #94a3b8);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.glowing-star, .star-twinkle {
+  display: inline-block;
+  color: #38bdf8;
+  animation: starTwinkle 2.4s ease-in-out infinite;
+}
+
+@keyframes starTwinkle {
+  0%, 100% { opacity: 0.3; transform: scale(0.85); filter: drop-shadow(0 0 1px rgba(56, 189, 248, 0.4)); }
+  50% { opacity: 1; transform: scale(1.15); filter: drop-shadow(0 0 8px #38bdf8); }
+}
+
+.header-star-field {
+  display: inline-flex;
+  gap: 16px;
+  align-items: center;
+  margin-left: 20px;
+}
+
+.telemetry-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.live-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+}
+
+/* Equipment Node Sprites & Cards */
+.node-sprite-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  margin-bottom: 6px;
+}
+
+.node-sprite-wrapper {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+
+.node-header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.node-header-text .asset-purpose {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--flow, #38bdf8);
+  text-transform: uppercase;
+}
+
+.node-chain-bookend {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  display: inline-block;
+}
+
+.origin-tag {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+.terminus-tag {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
+.dc-node {
+  border-color: #0284c7 !important;
+  box-shadow: 0 0 14px rgba(2, 132, 199, 0.25);
+}
+
+.tower-node {
+  border-color: #9333ea !important;
+  box-shadow: 0 0 14px rgba(147, 51, 234, 0.25);
+}
+
+.pump-node-box {
+  background: var(--panel2);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+/* Rotating Impeller Animation */
+.impeller-rotor.impeller-running {
+  transform-origin: 16px 16px;
+  animation: impellerSpin 1.2s linear infinite;
+}
+
+.impeller-rotor.impeller-tripped {
+  transform-origin: 16px 16px;
+  filter: drop-shadow(0 0 3px #ef4444);
+}
+
+.impeller-rotor.impeller-stopped {
+  transform-origin: 16px 16px;
+}
+
+@keyframes impellerSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Cooling Tower Vapor Plume */
+.vapor-plume {
+  animation: vaporRise 1.6s ease-in-out infinite;
+}
+
+@keyframes vaporRise {
+  0% { opacity: 0.2; transform: translateY(0); }
+  50% { opacity: 0.8; transform: translateY(-3px); }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+
+/* LED Blink Animation for Data Center */
+.led-blink {
+  animation: ledBlink 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes ledBlink {
+  0% { opacity: 0.35; }
+  100% { opacity: 1; filter: drop-shadow(0 0 5px #22c55e); }
+}

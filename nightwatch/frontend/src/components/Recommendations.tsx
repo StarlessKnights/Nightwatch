@@ -6,7 +6,7 @@ import { PayoffBanner } from './PayoffBanner'
 
 interface Props {
   env: Envelope; rec: Recommendation | null; selectedId: string | null
-  onSelect: (id: string | null) => void; run: (fn: () => Promise<unknown>) => Promise<void>; disclaimer: string
+  onSelect: (id: string | null) => void; run: (fn: () => Promise<unknown>) => Promise<void>
 }
 
 function Cost({ o }: { o: Option }) {
@@ -18,7 +18,7 @@ function Cost({ o }: { o: Option }) {
   )
 }
 
-export function Recommendations({ env, rec, selectedId, onSelect, run, disclaimer }: Props) {
+export function Recommendations({ env, rec, selectedId, onSelect, run }: Props) {
   const [showRejected, setShowRejected] = useState(false)
   if (!rec) return <div className="panel-fill"><div className="hint pad">Computing…</div></div>
   const byId = new Map(rec.options.map((o) => [o.action_id, o]))
@@ -76,7 +76,7 @@ export function Recommendations({ env, rec, selectedId, onSelect, run, disclaime
           ))}
         </>
       )}
-      <div className="disclaimer">{disclaimer}</div>
+      
     </div>
   )
 }

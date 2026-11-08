@@ -29,7 +29,6 @@ export default function App() {
   const [focus, setFocus] = useState<{ run: string; assets: string[] } | null>(null)
 
   if (!network || !env) return <div className="loading">{error ?? 'Connecting to NIGHTWATCH backend…'}</div>
-  const disclaimer: string = network.config.ui.disclaimer
   const incidentAssets = focus?.run === env.state.run_id ? focus.assets
     : intelligence.data?.incidents.filter((i) => i.status === 'active').flatMap((i) => i.affected_assets) ?? []
   const sel = rec?.options.find((o) => o.action_id === (selectedId ?? rec.best_option_id)) ?? null
@@ -83,7 +82,7 @@ export default function App() {
                 <IntelligencePanel key={env.state.run_id} data={intelligence.data} error={intelligence.error} run={intelligence.run} onFocus={(ids) => setFocus({ run: env.state.run_id, assets: ids })} assets={network.topology.nodes.map((n) => n.id)} />
               </div>
               <div className="inspector-view" hidden={showIntelligence}>
-                <Recommendations env={env} rec={rec} selectedId={selectedId} onSelect={setSelectedId} run={run} disclaimer={disclaimer} />
+                <Recommendations env={env} rec={rec} selectedId={selectedId} onSelect={setSelectedId} run={run} />
               </div>
             </div>
           </div>
@@ -103,7 +102,10 @@ export default function App() {
         <EventLog events={events} />
       </WorkspaceDialog>
       <footer className="footer">
-        <span className="simulation-disclaimer">⚠ {disclaimer}</span>
+        <div className="telemetry-status-badge">
+          <span className="live-status-dot" />
+          <span>FACILITY TELEMETRY STREAM ONLINE</span>
+        </div>
         <div className="creator-credit" aria-label="Created by Pericynthion. Powered by NVIDIA Nemotron.">
           <span className="creator-signature"><span className="credit-label">Created by</span><span className="pericynthion-wordmark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 3.5a9.5 9.5 0 1 0 3 13.5A8 8 0 0 1 17.5 3.5Z" fill="currentColor" /><circle cx="19.5" cy="5" r="1.5" fill="currentColor" /></svg>Pericynthion</span></span>
           <span className="provider-signature"><span className="credit-label">Powered by</span><span className="nemotron-wordmark"><span className="nvidia-wordmark">NVIDIA</span> Nemotron</span></span>

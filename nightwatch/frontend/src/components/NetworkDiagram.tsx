@@ -31,17 +31,148 @@ const H = () => (
   </>
 )
 
+
+// ==================== Unmistakable Equipment Sprites ====================
+
+// 1. DATA CENTER SERVER POD (Origin of Chain)
+function DataCenterSprite() {
+  return (
+    <div className="node-sprite-wrapper dc-sprite" title="Data Center Server Rack (Origin of IT Heat Load)">
+      <svg viewBox="0 0 32 36" width="32" height="36" fill="none" aria-hidden="true">
+        {/* Outer Server Cabinet Rack */}
+        <rect x="3" y="2" width="26" height="32" rx="3" fill="#0f172a" stroke="#38bdf8" strokeWidth="1.5" />
+        {/* Top ventilation louvers */}
+        <line x1="7" y1="5" x2="25" y2="5" stroke="#475569" strokeWidth="1" />
+        <line x1="7" y1="7" x2="25" y2="7" stroke="#475569" strokeWidth="1" />
+        {/* Blade Server 1 */}
+        <rect x="6" y="10" width="20" height="5" rx="1" fill="#1e293b" stroke="#334155" strokeWidth="1" />
+        <circle cx="9" cy="12.5" r="1" fill="#22c55e" className="led-blink" />
+        <line x1="13" y1="12.5" x2="23" y2="12.5" stroke="#64748b" strokeWidth="1" strokeDasharray="2 2" />
+        {/* Blade Server 2 */}
+        <rect x="6" y="17" width="20" height="5" rx="1" fill="#1e293b" stroke="#334155" strokeWidth="1" />
+        <circle cx="9" cy="19.5" r="1" fill="#22c55e" className="led-blink" style={{ animationDelay: '0.4s' }} />
+        <line x1="13" y1="19.5" x2="23" y2="19.5" stroke="#64748b" strokeWidth="1" strokeDasharray="2 2" />
+        {/* Blade Server 3 */}
+        <rect x="6" y="24" width="20" height="5" rx="1" fill="#1e293b" stroke="#334155" strokeWidth="1" />
+        <circle cx="9" cy="26.5" r="1" fill="#38bdf8" className="led-blink" style={{ animationDelay: '0.8s' }} />
+        <line x1="13" y1="26.5" x2="23" y2="26.5" stroke="#64748b" strokeWidth="1" strokeDasharray="2 2" />
+      </svg>
+    </div>
+  )
+}
+
+// 2. THERMAL STORAGE RESERVOIR (Buffer Tank)
+function TankVesselSprite({ levelPct = 60 }: { levelPct?: number }) {
+  return (
+    <div className="node-sprite-wrapper tank-sprite" title="Chilled Water Thermal Storage Vessel">
+      <svg viewBox="0 0 28 32" width="28" height="32" fill="none" aria-hidden="true">
+        {/* Cylindrical tank body with rounded dome caps */}
+        <path d="M4 8C4 5.5 8 4 14 4C20 4 24 5.5 24 8V24C24 26.5 20 28 14 28C8 28 4 26.5 4 24V8Z" fill="#0f172a" stroke="#60a5fa" strokeWidth="1.5" />
+        {/* Upper inspection dome seam */}
+        <ellipse cx="14" cy="8" rx="10" ry="3.5" fill="#1e293b" stroke="#38bdf8" strokeWidth="1" />
+        {/* Liquid level fill interior */}
+        <clipPath id="tankBodyClip">
+          <path d="M4 8C4 5.5 8 4 14 4C20 4 24 5.5 24 8V24C24 26.5 20 28 14 28C8 28 4 26.5 4 24V8Z" />
+        </clipPath>
+        <g clipPath="url(#tankBodyClip)">
+          <rect x="4" y={28 - (levelPct * 0.2)} width="20" height="24" fill="url(#tankLiquidGrad)" opacity="0.8" />
+        </g>
+        <defs>
+          <linearGradient id="tankLiquidGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#38bdf8" />
+            <stop offset="100%" stopColor="#1d4ed8" />
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+  )
+}
+
+// 3. CENTRIFUGAL CHILLER PUMP (Rotating Impeller)
+function ChillerPumpSprite({ isRunning = false, isTripped = false }: { isRunning?: boolean; isTripped?: boolean }) {
+  const spinClass = isTripped ? 'impeller-tripped' : isRunning ? 'impeller-running' : 'impeller-stopped'
+  return (
+    <div className="node-sprite-wrapper pump-sprite" title="Centrifugal Chiller Circulation Pump">
+      <svg viewBox="0 0 32 32" width="30" height="30" fill="none" aria-hidden="true">
+        {/* Volute outer spiral casing */}
+        <circle cx="16" cy="16" r="14" fill="#0f172a" stroke={isTripped ? '#ef4444' : isRunning ? '#22c55e' : '#64748b'} strokeWidth="2" />
+        {/* Discharge pipe flange */}
+        <path d="M26 6L30 2" stroke={isTripped ? '#ef4444' : isRunning ? '#22c55e' : '#64748b'} strokeWidth="2.5" strokeLinecap="round" />
+        {/* 4-Blade Impeller Rotor */}
+        <g className={`impeller-rotor ${spinClass}`}>
+          <circle cx="16" cy="16" r="3" fill="#cbd5e1" />
+          {/* Vane 1 */}
+          <path d="M16 13C16 8 20 7 21 8C20 11 18 13 16 13Z" fill={isTripped ? '#ef4444' : '#38bdf8'} />
+          {/* Vane 2 */}
+          <path d="M19 16C24 16 25 20 24 21C21 20 19 18 19 16Z" fill={isTripped ? '#ef4444' : '#38bdf8'} />
+          {/* Vane 3 */}
+          <path d="M16 19C16 24 12 25 11 24C12 21 14 19 16 19Z" fill={isTripped ? '#ef4444' : '#38bdf8'} />
+          {/* Vane 4 */}
+          <path d="M13 16C8 16 7 12 8 11C11 12 13 14 13 16Z" fill={isTripped ? '#ef4444' : '#38bdf8'} />
+        </g>
+      </svg>
+    </div>
+  )
+}
+
+// 4. CHILLED WATER DISTRIBUTION LOOP (Pipeline Header)
+function PipelineHeaderSprite() {
+  return (
+    <div className="node-sprite-wrapper pipe-sprite" title="Dual Chilled-Water Distribution Header">
+      <svg viewBox="0 0 28 28" width="26" height="26" fill="none" aria-hidden="true">
+        {/* Supply Pipe */}
+        <rect x="2" y="5" width="24" height="6" rx="2" fill="#1e293b" stroke="#38bdf8" strokeWidth="1.5" />
+        <path d="M8 8L12 8M16 8L20 8" stroke="#38bdf8" strokeWidth="1.5" strokeLinecap="round" />
+        {/* Return Pipe */}
+        <rect x="2" y="17" width="24" height="6" rx="2" fill="#1e293b" stroke="#818cf8" strokeWidth="1.5" />
+        <path d="M20 20L16 20M12 20L8 20" stroke="#818cf8" strokeWidth="1.5" strokeLinecap="round" />
+        {/* Cross Connection Flange */}
+        <line x1="14" y1="11" x2="14" y2="17" stroke="#475569" strokeWidth="2" strokeDasharray="2 2" />
+      </svg>
+    </div>
+  )
+}
+
+// 5. EVAPORATIVE COOLING TOWER (Terminus of Chain)
+function CoolingTowerSprite() {
+  return (
+    <div className="node-sprite-wrapper tower-sprite" title="Evaporative Cooling Tower (Atmospheric Heat Rejection)">
+      <svg viewBox="0 0 32 36" width="32" height="36" fill="none" aria-hidden="true">
+        {/* Rising heat vapor plumes */}
+        <path d="M11 7C10 4 12 3 11 1" stroke="#38bdf8" strokeWidth="1.2" strokeLinecap="round" className="vapor-plume" />
+        <path d="M16 7C15 3 17 2 16 0" stroke="#93c5fd" strokeWidth="1.2" strokeLinecap="round" className="vapor-plume" style={{ animationDelay: '0.4s' }} />
+        <path d="M21 7C20 4 22 3 21 1" stroke="#38bdf8" strokeWidth="1.2" strokeLinecap="round" className="vapor-plume" style={{ animationDelay: '0.8s' }} />
+        {/* Hyperbolic cooling tower chimney structure */}
+        <path d="M8 32L11 9H21L24 32C19 33.5 13 33.5 8 32Z" fill="#0f172a" stroke="#38bdf8" strokeWidth="1.5" />
+        {/* Top induced draft fan rim */}
+        <ellipse cx="16" cy="9" rx="5" ry="1.8" fill="#1e293b" stroke="#60a5fa" strokeWidth="1" />
+        {/* Internal fan blade icon */}
+        <circle cx="16" cy="9" r="1.2" fill="#38bdf8" />
+        {/* Lower air intake louvers */}
+        <line x1="9" y1="26" x2="23" y2="26" stroke="#475569" strokeWidth="1" />
+        <line x1="8.5" y1="29" x2="23.5" y2="29" stroke="#475569" strokeWidth="1" />
+      </svg>
+    </div>
+  )
+}
+
 function SourceNode({ data }: NodeProps<Node<D>>) {
   const s = data.env.state.sources[data.node.id]
   return (
-    <div className={`nd source ${data.dim ? 'dim' : ''}`}>
+    <div className={`nd source dc-node ${data.dim ? 'dim' : ''}`}>
       <H />
-      <b>{data.node.id}</b>
-      <div className="asset-purpose">IT heat load</div>
-      <div className="sub">{s.flow.toFixed(0)} kW</div>
+      <div className="node-chain-bookend origin-tag">ORIGIN</div>
+      <div className="node-sprite-row">
+        <DataCenterSprite />
+        <div className="node-header-text">
+          <b>{data.node.id}</b>
+          <div className="asset-purpose">DATA CENTER · IT POD</div>
+        </div>
+      </div>
+      <div className="sub">{s.flow.toFixed(0)} kW Heat Load</div>
       {s.eff_rate > s.rate && <div className="badge warn">surge ×{(s.eff_rate / s.rate).toFixed(2)}</div>}
       {s.curtailment_pct > 0 && <div className="badge">cut {s.curtailment_pct.toFixed(0)}%</div>}
-      {s.shut_in && <div className="badge crit" title="HH thermal protection: IT load shed">🔒 LOAD SHED {Number(s.shed_pct ?? 100).toFixed(0)}%</div>}
+      {s.shut_in && <div className="badge crit" title="HH thermal protection: IT load shed">LOAD SHED {Number(s.shed_pct ?? 100).toFixed(0)}%</div>}
     </div>
   )
 }
@@ -53,11 +184,17 @@ function TankNode({ data }: NodeProps<Node<D>>) {
   const highHigh = forecast?.time_to_HH
   const remaining = highHigh == null ? null : Math.max(0, highHigh - Math.max(0, data.env.state.t_min - data.env.forecast.as_of_min))
   const pct = (v: number) => `${Math.min(100, (v / t.capacity) * 100)}%`
+  const levelNum = Math.min(100, (t.volume / (t.capacity || 1)) * 100)
   return (
     <div className={`nd tank st-${t.status} ${data.dim ? 'dim' : ''}`}>
       <H />
-      <div className="tank-head"><b>{data.node.id}</b><span>{t.volume.toFixed(0)} kWh</span></div>
-      <div className="asset-purpose">{t.role === 'buffer' ? 'Thermal storage' : 'Hall thermal mass'}</div>
+      <div className="node-sprite-row">
+        <TankVesselSprite levelPct={levelNum} />
+        <div className="node-header-text">
+          <div className="tank-head"><b>{data.node.id}</b><span>{t.volume.toFixed(0)} kWh</span></div>
+          <div className="asset-purpose">{t.role === 'buffer' ? 'THERMAL BUFFER TANK' : 'HALL THERMAL MASS'}</div>
+        </div>
+      </div>
       <div className="bar">
         <div className="fill" style={{ height: pct(t.volume) }} />
         <div className="mark" style={{ bottom: pct(lim.H) }}><i>H</i></div>
@@ -65,33 +202,43 @@ function TankNode({ data }: NodeProps<Node<D>>) {
       </div>
       <div className="tank-readings"><span>{Math.max(0, t.capacity - t.volume).toFixed(0)} kWh free</span><span title={`Forecast at T+${data.env.forecast.as_of_min} min`}>{remaining == null ? 'No HH forecast' : `HH in ${Math.ceil(remaining)} min`}</span></div>
       <div className="sub">In {t.inflow.toFixed(0)} / out {t.outflow.toFixed(0)} kW</div>
-      {t.interlock.tripped && <div className="badge crit">🔒 HH protection</div>}
+      {t.interlock.tripped && <div className="badge crit">INTERLOCK TRIP</div>}
       {t.interlock.ll_tripped && <div className="badge crit">LL trip</div>}
       {t.overflow_bbl > 0 && <div className="badge crit">THERMAL EVENT {t.overflow_bbl.toFixed(0)} kWh</div>}
     </div>
   )
 }
 
-const DIAG_ICON: Record<string, string> = { PUMP_WEAR: '🔧', RESTRICTION: '🚧', COMPOUND: '⚠' }
 
 function PumpNode({ data }: NodeProps<Node<D>>) {
   const p = data.env.state.pumps[data.node.id]
   const cls = !p.available ? 'unavail' : p.run_state === 'RUNNING' ? 'running' : p.run_state === 'STARTING' ? 'starting' : p.run_state === 'TRIPPED' ? 'tripped' : 'stopped'
   const d = p.diagnosis
+  const isRunning = p.run_state === 'RUNNING'
+  const isTripped = p.run_state === 'TRIPPED'
   return (
     <div className={`nd pump-wrap ${data.dim ? 'dim' : ''}`}>
       <H />
-      <div className={`pump ${cls}`} title={`${p.run_state}${p.limited_by ? ` (limited by ${p.limited_by})` : ''} · double-click for detail`}>
-        {data.node.id.replace('CHP-', 'CH')}
-        <button className="info nodrag" title="Pump detail" aria-label={`View ${data.node.id} details`} onClick={(e) => { e.stopPropagation(); data.onDetails?.(data.node.id) }}>ⓘ</button>
-      </div>
-      <div className="sub">{!p.available ? 'UNAVAILABLE' : p.run_state === 'STOPPED' && p.role === 'standby' ? 'STANDBY' : p.run_state}</div>
-      {d?.w_est != null && (
-        <div className={`badge ${d.code === 'NONE' ? '' : 'warn'}`} title={d.text}>
-          w {(d.w_est * 100).toFixed(0)}% {DIAG_ICON[d.code] ?? ''}
+      <div className="pump-node-box">
+        <div className="node-sprite-row">
+          <ChillerPumpSprite isRunning={isRunning} isTripped={isTripped} />
+          <div className="node-header-text">
+            <b>{data.node.id.replace('CHP-', 'CHILLER ')}</b>
+            <div className="asset-purpose">CENTRIFUGAL PUMP</div>
+          </div>
         </div>
-      )}
-      {p.auto_started && <div className="badge">AUTO</div>}
+        <div className={`pump ${cls}`} title={`${p.run_state}${p.limited_by ? ` (limited by ${p.limited_by})` : ''} · double-click for detail`}>
+          {data.node.id.replace('CHP-', 'CH')}
+          <button className="info nodrag" title="Pump detail" aria-label={`View ${data.node.id} details`} onClick={(e) => { e.stopPropagation(); data.onDetails?.(data.node.id) }}>ⓘ</button>
+        </div>
+        <div className="sub">{!p.available ? 'UNAVAILABLE' : p.run_state === 'STOPPED' && p.role === 'standby' ? 'STANDBY' : p.run_state}</div>
+        {d?.w_est != null && (
+          <div className={`badge ${d.code === 'NONE' ? '' : 'warn'}`} title={d.text}>
+            w {(d.w_est * 100).toFixed(0)}% {d.code !== 'NONE' ? 'FAULT' : ''}
+          </div>
+        )}
+        {p.auto_started && <div className="badge">AUTO</div>}
+      </div>
     </div>
   )
 }
@@ -102,8 +249,13 @@ function PipeNode({ data }: NodeProps<Node<D>>) {
   return (
     <div className={`nd pipe ${util > 0.98 ? 'st-warning' : ''} ${data.dim ? 'dim' : ''}`}>
       <H />
-      <b>{data.node.label}</b>
-      <div className="asset-purpose">Chilled-water loop</div>
+      <div className="node-sprite-row">
+        <PipelineHeaderSprite />
+        <div className="node-header-text">
+          <b>{data.node.label}</b>
+          <div className="asset-purpose">CHILLED-WATER LOOP</div>
+        </div>
+      </div>
       <div className="sub">{p.flow.toFixed(0)} / {p.cap.toFixed(0)} kW</div>
       {p.r > 1 && <div className="badge warn">restricted r={p.r.toFixed(1)}</div>}
     </div>
@@ -113,10 +265,16 @@ function PipeNode({ data }: NodeProps<Node<D>>) {
 function TreatNode({ data }: NodeProps<Node<D>>) {
   const p = data.env.state.treatment[data.node.id]
   return (
-    <div className={`nd treat ${p.flow >= p.cap - FLOW_EPS ? 'st-warning' : ''} ${data.dim ? 'dim' : ''}`}>
+    <div className={`nd treat tower-node ${p.flow >= p.cap - FLOW_EPS ? 'st-warning' : ''} ${data.dim ? 'dim' : ''}`}>
       <H />
-      <b>{data.node.label}</b>
-      <div className="asset-purpose">Heat rejection</div>
+      <div className="node-chain-bookend terminus-tag">TERMINUS</div>
+      <div className="node-sprite-row">
+        <CoolingTowerSprite />
+        <div className="node-header-text">
+          <b>{data.node.label}</b>
+          <div className="asset-purpose">COOLING TOWER · HEAT REJECTION</div>
+        </div>
+      </div>
       <div className="sub">{p.flow.toFixed(0)} / {p.cap.toFixed(0)} kW</div>
       {p.intake_factor < 1 && <div className="badge warn">constrained {(p.intake_factor * 100).toFixed(0)}%</div>}
     </div>
