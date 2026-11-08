@@ -262,6 +262,14 @@ class Session:
         telemetry: dict | None = None,
     ) -> dict:
         """Processes real-time hardware status & sensor telemetry from physical Arduinos."""
+        # Resolve legacy/gateway pump IDs to active datacenter chiller pumps
+        alias_map = {
+            "P-201": "CHP-1",
+            "P-203": "CHP-1",
+            "P-204": "CHP-2",
+            "P-202": "CHP-3",
+        }
+        pump_id = alias_map.get(pump_id, pump_id)
         if pump_id not in self.state.pumps:
             raise KeyError(pump_id)
 

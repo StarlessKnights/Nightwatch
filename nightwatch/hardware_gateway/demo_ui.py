@@ -40,6 +40,13 @@ def perform_action(api_url, payload):
         raise ValueError("Unknown device")
     pump = PUMPS[dev]
     snapshot = backend(api_url, "GET", "/api/network")["snapshot"]["state"]
+    pumps_dict = snapshot.get("pumps", {})
+    if pump not in pumps_dict:
+        alias_map = {"CHP-1": "P-203", "CHP-2": "P-204", "P-203": "CHP-1", "P-204": "CHP-2", "P-201": "CHP-1"}
+        if alias_map.get(pump) in pumps_dict:
+            pump = alias_map[pump]
+        elif pumps_dict:
+            pump = next(iter(pumps_dict))
     faults = [f for f in snapshot["faults"] if f["target"] == pump and f.get("active", True)]
     if kind == "trip":
         trips = [f for f in faults if f["type"] == "PUMP_TRIP"]

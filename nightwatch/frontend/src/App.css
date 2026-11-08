@@ -305,18 +305,27 @@ h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .06e
   padding: 8px 10px;
 }
 
-/* Rotating Impeller Animation */
+/* ==================== Equipment Animations ==================== */
+
+.impeller-rotor {
+  transform-box: view-box;
+  transform-origin: 16px 16px;
+}
+
 .impeller-rotor.impeller-running {
+  transform-box: view-box;
   transform-origin: 16px 16px;
   animation: impellerSpin 1.2s linear infinite;
 }
 
 .impeller-rotor.impeller-tripped {
+  transform-box: view-box;
   transform-origin: 16px 16px;
-  filter: drop-shadow(0 0 3px #ef4444);
+  filter: drop-shadow(0 0 4px #ef4444);
 }
 
 .impeller-rotor.impeller-stopped {
+  transform-box: view-box;
   transform-origin: 16px 16px;
 }
 
@@ -344,4 +353,16 @@ h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .06e
 @keyframes ledBlink {
   0% { opacity: 0.35; }
   100% { opacity: 1; filter: drop-shadow(0 0 5px #22c55e); }
+}
+
+/* React Flow Animated Water Flow Edges */
+.react-flow__edge.animated path.react-flow__edge-path,
+.react-flow__edge.flow-live path.react-flow__edge-path {
+  stroke-dasharray: 6 6 !important;
+  animation: react-flow__dashflow 0.8s linear infinite !important;
+}
+
+@keyframes react-flow__dashflow {
+  from { stroke-dashoffset: 24; }
+  to { stroke-dashoffset: 0; }
 }

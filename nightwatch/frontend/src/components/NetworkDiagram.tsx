@@ -46,15 +46,21 @@ function DataCenterSprite() {
         <line x1="7" y1="7" x2="25" y2="7" stroke="#475569" strokeWidth="1" />
         {/* Blade Server 1 */}
         <rect x="6" y="10" width="20" height="5" rx="1" fill="#1e293b" stroke="#334155" strokeWidth="1" />
-        <circle cx="9" cy="12.5" r="1" fill="#22c55e" className="led-blink" />
+        <circle cx="9" cy="12.5" r="1.5" fill="#22c55e" className="led-blink">
+          <animate attributeName="opacity" values="0.25; 1; 0.25" dur="1.2s" repeatCount="indefinite" />
+        </circle>
         <line x1="13" y1="12.5" x2="23" y2="12.5" stroke="#64748b" strokeWidth="1" strokeDasharray="2 2" />
         {/* Blade Server 2 */}
         <rect x="6" y="17" width="20" height="5" rx="1" fill="#1e293b" stroke="#334155" strokeWidth="1" />
-        <circle cx="9" cy="19.5" r="1" fill="#22c55e" className="led-blink" style={{ animationDelay: '0.4s' }} />
+        <circle cx="9" cy="19.5" r="1.5" fill="#22c55e" className="led-blink">
+          <animate attributeName="opacity" values="0.25; 1; 0.25" dur="1.2s" begin="0.4s" repeatCount="indefinite" />
+        </circle>
         <line x1="13" y1="19.5" x2="23" y2="19.5" stroke="#64748b" strokeWidth="1" strokeDasharray="2 2" />
         {/* Blade Server 3 */}
         <rect x="6" y="24" width="20" height="5" rx="1" fill="#1e293b" stroke="#334155" strokeWidth="1" />
-        <circle cx="9" cy="26.5" r="1" fill="#38bdf8" className="led-blink" style={{ animationDelay: '0.8s' }} />
+        <circle cx="9" cy="26.5" r="1.5" fill="#38bdf8" className="led-blink">
+          <animate attributeName="opacity" values="0.25; 1; 0.25" dur="1.2s" begin="0.8s" repeatCount="indefinite" />
+        </circle>
         <line x1="13" y1="26.5" x2="23" y2="26.5" stroke="#64748b" strokeWidth="1" strokeDasharray="2 2" />
       </svg>
     </div>
@@ -93,13 +99,23 @@ function ChillerPumpSprite({ isRunning = false, isTripped = false }: { isRunning
   const spinClass = isTripped ? 'impeller-tripped' : isRunning ? 'impeller-running' : 'impeller-stopped'
   return (
     <div className="node-sprite-wrapper pump-sprite" title="Centrifugal Chiller Circulation Pump">
-      <svg viewBox="0 0 32 32" width="30" height="30" fill="none" aria-hidden="true">
+      <svg viewBox="0 0 32 32" width="30" height="30" fill="none" aria-hidden="true" style={{ overflow: 'visible' }}>
         {/* Volute outer spiral casing */}
         <circle cx="16" cy="16" r="14" fill="#0f172a" stroke={isTripped ? '#ef4444' : isRunning ? '#22c55e' : '#64748b'} strokeWidth="2" />
         {/* Discharge pipe flange */}
         <path d="M26 6L30 2" stroke={isTripped ? '#ef4444' : isRunning ? '#22c55e' : '#64748b'} strokeWidth="2.5" strokeLinecap="round" />
         {/* 4-Blade Impeller Rotor */}
-        <g className={`impeller-rotor ${spinClass}`}>
+        <g className={`impeller-rotor ${spinClass}`} style={{ transformOrigin: '16px 16px', transformBox: 'view-box' }}>
+          {isRunning && (
+            <animateTransform
+              attributeName="transform"
+              type="rotate"
+              from="0 16 16"
+              to="360 16 16"
+              dur="1.2s"
+              repeatCount="indefinite"
+            />
+          )}
           <circle cx="16" cy="16" r="3" fill="#cbd5e1" />
           {/* Vane 1 */}
           <path d="M16 13C16 8 20 7 21 8C20 11 18 13 16 13Z" fill={isTripped ? '#ef4444' : '#38bdf8'} />
@@ -137,11 +153,20 @@ function PipelineHeaderSprite() {
 function CoolingTowerSprite() {
   return (
     <div className="node-sprite-wrapper tower-sprite" title="Evaporative Cooling Tower (Atmospheric Heat Rejection)">
-      <svg viewBox="0 0 32 36" width="32" height="36" fill="none" aria-hidden="true">
+      <svg viewBox="0 0 32 36" width="32" height="36" fill="none" aria-hidden="true" style={{ overflow: 'visible' }}>
         {/* Rising heat vapor plumes */}
-        <path d="M11 7C10 4 12 3 11 1" stroke="#38bdf8" strokeWidth="1.2" strokeLinecap="round" className="vapor-plume" />
-        <path d="M16 7C15 3 17 2 16 0" stroke="#93c5fd" strokeWidth="1.2" strokeLinecap="round" className="vapor-plume" style={{ animationDelay: '0.4s' }} />
-        <path d="M21 7C20 4 22 3 21 1" stroke="#38bdf8" strokeWidth="1.2" strokeLinecap="round" className="vapor-plume" style={{ animationDelay: '0.8s' }} />
+        <path d="M11 7C10 4 12 3 11 1" stroke="#38bdf8" strokeWidth="1.5" strokeLinecap="round" className="vapor-plume">
+          <animateTransform attributeName="transform" type="translate" values="0 0; 0 -3; 0 -6" dur="1.6s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.2; 0.9; 0" dur="1.6s" repeatCount="indefinite" />
+        </path>
+        <path d="M16 7C15 3 17 2 16 0" stroke="#93c5fd" strokeWidth="1.5" strokeLinecap="round" className="vapor-plume">
+          <animateTransform attributeName="transform" type="translate" values="0 0; 0 -3; 0 -6" dur="1.6s" begin="0.4s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.2; 0.9; 0" dur="1.6s" begin="0.4s" repeatCount="indefinite" />
+        </path>
+        <path d="M21 7C20 4 22 3 21 1" stroke="#38bdf8" strokeWidth="1.5" strokeLinecap="round" className="vapor-plume">
+          <animateTransform attributeName="transform" type="translate" values="0 0; 0 -3; 0 -6" dur="1.6s" begin="0.8s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.2; 0.9; 0" dur="1.6s" begin="0.8s" repeatCount="indefinite" />
+        </path>
         {/* Hyperbolic cooling tower chimney structure */}
         <path d="M8 32L11 9H21L24 32C19 33.5 13 33.5 8 32Z" fill="#0f172a" stroke="#38bdf8" strokeWidth="1.5" />
         {/* Top induced draft fan rim */}
@@ -214,8 +239,8 @@ function PumpNode({ data }: NodeProps<Node<D>>) {
   const p = data.env.state.pumps[data.node.id]
   const cls = !p.available ? 'unavail' : p.run_state === 'RUNNING' ? 'running' : p.run_state === 'STARTING' ? 'starting' : p.run_state === 'TRIPPED' ? 'tripped' : 'stopped'
   const d = p.diagnosis
-  const isRunning = p.run_state === 'RUNNING'
   const isTripped = p.run_state === 'TRIPPED'
+  const isRunning = !isTripped && (p.run_state === 'RUNNING' || p.run_state === 'STARTING' || p.flow > 0.1 || Boolean(p.hardware_online))
   return (
     <div className={`nd pump-wrap ${data.dim ? 'dim' : ''}`}>
       <H />
@@ -348,9 +373,14 @@ export function NetworkDiagram({ env, network, onPumpDetail, incidentAssets = []
     const affected = !transfer && incidentAssets.includes(e.from) && incidentAssets.includes(e.to)
     return {
       id: `${e.from}-${e.to}`, source: e.from, target: e.to,
+      animated: live,
       className: transfer ? undefined : `plant-flow-edge ${live ? 'flow-live' : ''}`,
       label: transfer ? 'buffer transfer' : live ? `${flow.toFixed(0)} kW` : undefined,
-      style: { stroke: affected ? 'var(--warn)' : live ? 'var(--flow)' : 'var(--idle)', strokeWidth: affected ? 3 : live ? 2.5 : 1.5, strokeDasharray: live ? undefined : '5 5', opacity: dim ? 0.2 : live ? 1 : 0.6 },
+      style: {
+        stroke: affected ? 'var(--warn)' : live ? 'var(--flow)' : 'var(--idle)',
+        strokeWidth: affected ? 3 : live ? 2.5 : 1.5,
+        opacity: dim ? 0.2 : live ? 1 : 0.6
+      },
       labelStyle: { fill: 'var(--text)', fontSize: 11 }, labelBgStyle: { fill: 'var(--panel)' },
     }
   })

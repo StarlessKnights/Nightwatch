@@ -23,9 +23,9 @@
     }
   },
   "pumps": {
-    "device1": {"id": "P-201", "name": "P-201 (Duty T-101)", "tank": "T-101", "type": "outflow", "rated_flow": 200},
-    "device2": {"id": "P-203", "name": "P-203 (Duty T-104)", "tank": "T-104", "type": "outflow", "rated_flow": 200},
-    "device3": {"id": "P-204", "name": "P-204 (Standby T-104)", "tank": "T-104", "type": "outflow", "rated_flow": 200}
+    "device1": {"id": "CHP-1", "name": "CHP-1 (Duty Hall A)", "tank": "HALL-A", "type": "outflow", "rated_flow": 200},
+    "device2": {"id": "CHP-1", "name": "CHP-1 (Duty Hall A)", "tank": "HALL-A", "type": "outflow", "rated_flow": 200},
+    "device3": {"id": "CHP-2", "name": "CHP-2 (Standby Hall A)", "tank": "HALL-A", "type": "outflow", "rated_flow": 200}
   },
   "demo_ui": {"enabled": true, "port": 8090}
 }

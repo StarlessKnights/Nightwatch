@@ -81,7 +81,7 @@ class SerialPortLink:
     profile: Optional[str] = None
 
 
-PUMPS = {1: "P-201", 2: "P-203", 3: "P-204"}
+PUMPS = {1: "CHP-1", 2: "CHP-1", 3: "CHP-2"}
 
 PROFILES = (
     "tank", "pump", "output",
@@ -919,7 +919,7 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
     status_queue: asyncio.Queue[dict] = asyncio.Queue()
 
     def on_presence_change(dev_id: int, online: bool):
-        pump_id = "CHP-1" if (dev_id == 2 and "CHP-1" in current_state.get("pumps", {})) else PUMPS.get(dev_id, f"P-20{dev_id}")
+        pump_id = "CHP-2" if dev_id == 3 else "CHP-1"
         logger.info(f"[PRESENCE] Device {dev_id} ({pump_id}) -> {'ONLINE' if online else 'OFFLINE'}")
         status_queue.put_nowait({
             "dev": dev_id,
