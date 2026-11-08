@@ -16,7 +16,7 @@ def _a(pm: PumpModelCfg) -> float:
 
 
 def operating_point(w: float, s: float, r: float, pm: PumpModelCfg) -> tuple[float, float]:
-    """(Q bbl/hr, P head) where the pump curve meets the system curve. Dead-head -> (0, 0)."""
+    """(Q kW, P head) where the pump curve meets the system curve. Dead-head -> (0, 0)."""
     if s <= 0 or w <= 0:
         return 0.0, 0.0
     num = w * pm.H0 * s * s - pm.Hs

@@ -78,17 +78,17 @@ def test_tools_cannot_actuate_or_see_future_faults(agent_setup):
     before = session.state
     with pytest.raises(ValueError, match="not allowed"):
         ctx.execute("approve", {})
-    ctx.execute("submit_scenario_proposal", {"faults": [{"type": "PUMP_UNAVAILABLE", "target": "P-204"}]})
+    ctx.execute("submit_scenario_proposal", {"faults": [{"type": "PUMP_UNAVAILABLE", "target": "CHP-2"}]})
     assert session.state is before
     assert ctx.scenarios[0]["hypothetical"]
 
 
 @pytest.mark.parametrize("fault", [
-    {"type": "PUMP_DEGRADE", "target": "P-203", "params": {"factor": 2}},
-    {"type": "PUMP_DEGRADE", "target": "P-203", "params": {"factor": float("nan")}},
-    {"type": "PUMP_TRIP", "target": "T-104"},
-    {"type": "PUMP_TRIP", "target": "P-203", "params": {"override": True}},
-    {"type": "LEVEL_SENSOR_FAULT", "target": "T-101", "params": {"transmitter": "B"}},
+    {"type": "PUMP_DEGRADE", "target": "CHP-1", "params": {"factor": 2}},
+    {"type": "PUMP_DEGRADE", "target": "CHP-1", "params": {"factor": float("nan")}},
+    {"type": "PUMP_TRIP", "target": "HALL-A"},
+    {"type": "PUMP_TRIP", "target": "CHP-1", "params": {"override": True}},
+    {"type": "LEVEL_SENSOR_FAULT", "target": "HALL-B", "params": {"transmitter": "B"}},
 ])
 def test_scenario_rejects_invalid_faults(agent_setup, fault):
     session, agent = agent_setup
@@ -101,11 +101,11 @@ def test_scenario_rejects_invalid_faults(agent_setup, fault):
 def test_proposal_matches_deterministic_engine_and_requires_approval(agent_setup):
     session, agent = agent_setup
     ctx = Context(session, agent.audit)
-    evidence = ctx.asset("P-203")
+    evidence = ctx.asset("CHP-1")
     original = decision.recommend(ctx.state, ctx.topo, ctx.cfg)
-    p = ctx.execute("submit_action_proposal", {"actions": [{"kind": "START_STANDBY_PUMP", "target": "P-204"}], "evidence_ids": [evidence["id"]]})
+    p = ctx.execute("submit_action_proposal", {"actions": [{"kind": "START_STANDBY_PUMP", "target": "CHP-2"}], "evidence_ids": [evidence["id"]]})
     assert p["status"] == "VALIDATED"
-    assert p["option"] == next(o.model_dump() for o in original.options if o.action_id == "START_STANDBY_PUMP:P-204")
+    assert p["option"] == next(o.model_dump() for o in original.options if o.action_id == "START_STANDBY_PUMP:CHP-2")
     assert not session.state.pending_actions
     agent.publish_context(ctx)
     async def approve():
@@ -122,10 +122,10 @@ def test_proposal_matches_deterministic_engine_and_requires_approval(agent_setup
 def test_revalidation_rejects_newly_unavailable_pump(agent_setup):
     session, agent = agent_setup
     ctx = Context(session, agent.audit)
-    evidence = ctx.asset("P-203")
-    p = ctx.execute("submit_action_proposal", {"actions": [{"kind": "START_STANDBY_PUMP", "target": "P-204"}], "evidence_ids": [evidence["id"]]})
+    evidence = ctx.asset("CHP-1")
+    p = ctx.execute("submit_action_proposal", {"actions": [{"kind": "START_STANDBY_PUMP", "target": "CHP-2"}], "evidence_ids": [evidence["id"]]})
     agent.publish_context(ctx)
-    session.patch_asset("P-204", None, False)
+    session.patch_asset("CHP-2", None, False)
     asyncio.run(agent.decide(p["id"], True, session.run_id))
     assert p["status"] == "REJECTED" and not session.state.pending_actions
 
@@ -134,8 +134,8 @@ def test_conflicts_and_unknown_evidence_rejected(agent_setup):
     session, agent = agent_setup
     ctx = Context(session, agent.audit)
     with pytest.raises(ValueError, match="Evidence"):
-        ctx.execute("submit_action_proposal", {"actions": [{"kind": "START_STANDBY_PUMP", "target": "P-204"}], "evidence_ids": ["invented"]})
-    a = actions.Action("REDUCE_PRODUCTION", {"source": "SRC-1", "pct": 40})
+        ctx.execute("submit_action_proposal", {"actions": [{"kind": "START_STANDBY_PUMP", "target": "CHP-2"}], "evidence_ids": ["invented"]})
+    a = actions.Action("REDUCE_PRODUCTION", {"source": "LOAD-A", "pct": 40})
     with pytest.raises(ValueError, match="Conflicting"):
         decision.evaluate_actions(ctx.state, ctx.topo, ctx.cfg, [a, a])
 
@@ -194,7 +194,7 @@ def test_disabled_agent_leaves_safety_operational(agent_setup):
         await asyncio.sleep(.02)
         await agent.close()
     asyncio.run(run())
-    assert session.state.interlocks["T-104"].tripped
+    assert session.state.interlocks["HALL-A"].tripped
     assert not agent.incidents
 
 
@@ -206,7 +206,7 @@ def test_gateway_tool_loop_and_evidence_validation(agent_setup):
         nonlocal count
         count += 1
         if count == 1:
-            message = {"content": None, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "get_asset_state", "arguments": '{"asset_id":"P-203"}'}}]}
+            message = {"content": None, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "get_asset_state", "arguments": '{"asset_id":"CHP-1"}'}}]}
         else:
             message = {"content": json.dumps({"evidence_ids": list(ctx.evidence), "interpretations": [], "concerns": [], "question": None})}
         return httpx.Response(200, json={"choices": [{"message": message, "finish_reason": "stop"}]})
@@ -235,16 +235,16 @@ def test_gateway_fails_closed(agent_setup, mode):
 def test_gateway_repairs_quantities_but_accepts_cited_equipment_tag(agent_setup):
     session, agent = agent_setup
     ctx = Context(session, agent.audit)
-    seed = ctx.asset("P-203")
+    seed = ctx.asset("CHP-1")
     calls = []
     def handler(request):
         calls.append(json.loads(request.content))
-        prose = "P-203 lost 99 bbl." if len(calls) == 1 else "Check whether P-203 output recovers."
+        prose = "CHP-1 lost 99 kWh." if len(calls) == 1 else "Check whether CHP-1 output recovers."
         answer = {"evidence_ids": [seed["id"]], "interpretations": [{"text": prose, "evidence_ids": [seed["id"]]}]}
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(answer)}}]})
     gateway = Gateway(Settings(api_key="test"), agent.audit, httpx.MockTransport(handler))
     answer = asyncio.run(gateway.analyze(ctx, "What changed?", seed))
-    assert answer.interpretations[0].text == "Check whether P-203 output recovers."
+    assert answer.interpretations[0].text == "Check whether CHP-1 output recovers."
     assert len(calls) == 2 and "tools" not in calls[1] and calls[1]["response_format"]["type"] == "json_object"
 
 
@@ -252,14 +252,14 @@ def test_fallback_chat_simulates_without_mutation(agent_setup):
     session, agent = agent_setup
     before = session.state
     ctx = Context(session, agent.audit)
-    answer = asyncio.run(agent.fallback_chat(ctx, "What happens if treatment capacity drops by 50%?", None))
+    answer = asyncio.run(agent.fallback_chat(ctx, "What happens if heat rejection capacity drops by 50%?", None))
     assert answer.evidence_ids and ctx.scenarios[0]["faults"][0]["params"]["factor"] == .5
     result = ctx.scenarios[0]
     reference = decision.recommend(before, ctx.topo, ctx.cfg, engine_enabled=False)
     assert result["baseline"]["do_nothing_cost"] == reference.do_nothing_cost
     assert {t: f["time_to_HH"] for t, f in result["baseline"]["forecast"].items()} == {
         t: f.time_to_HH for t, f in reference.forecast.items()}
-    assert {"T-104", "T-101"} <= result["forecast"].keys()
+    assert {"HALL-A", "HALL-B"} <= result["forecast"].keys()
     assert session.state is before
 
 

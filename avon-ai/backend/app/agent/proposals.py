@@ -14,12 +14,12 @@ class ActionSpec(StrictModel):
     def action(self):
         from ..actions import Action
         if self.kind != "REDUCE_PRODUCTION" and self.pct is not None:
-            raise ValueError("Percentage only applies to production reduction")
+            raise ValueError("Percentage only applies to load reduction")
         key = {"START_STANDBY_PUMP": "pump", "REDUCE_PRODUCTION": "source", "DISPATCH_TRUCK": "tank"}[self.kind]
         params = {key: self.target}
         if self.kind == "REDUCE_PRODUCTION":
             if self.pct is None:
-                raise ValueError("Production reduction needs a percentage")
+                raise ValueError("Load reduction needs a percentage")
             params["pct"] = self.pct
         return Action(self.kind, params)
 

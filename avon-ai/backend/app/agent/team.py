@@ -8,15 +8,15 @@ from .gateway import GatewayError
 from .handoff import handoff_text
 
 
-FLOW = "Inflow/Outflow Monitor"
-PUMP = "Pump Monitor"
+FLOW = "Thermal Load Monitor"
+PUMP = "Cooling Plant Monitor"
 COORDINATOR = "Coordinator"
 
 PROMPTS = {
-    FLOW: "Review inflow surges, tank inflow versus outflow, pipeline resistance and treatment restrictions. "
+    FLOW: "Review IT load surges, hall heat gain versus heat removal, chilled-water loop resistance and heat-rejection restrictions. "
           "Explain the main imbalance and the next reading to check.",
-    PUMP: "Review delivered pump flow, health, trips, availability and standby readiness. "
-          "Distinguish a worn pump from a downstream restriction. Availability alone does not prove backup capacity.",
+    PUMP: "Review delivered chiller-pump flow, health, trips, availability and standby readiness. "
+          "Distinguish a worn pump from a restriction in the loop or heat rejection. Availability alone does not prove backup capacity.",
     COORDINATOR: "Combine the two specialist handoffs into an operator briefing. Identify the most pressing consequence, "
                  "how the flow and pump evidence relate, and one next check. Distinguish hypotheses from measurements. "
                  "If a material incident warrants an alternative, consult the ranking and submit it for validation.",
@@ -40,18 +40,18 @@ def flow_report(ctx, model):
     ids = [ctx.asset(asset)["id"] for group in groups for asset in ctx.dto[group]]
     tanks = ctx.dto["tanks"]
     rising = max(tanks, key=lambda t: tanks[t]["inflow"] - tanks[t]["outflow"], default=None)
-    summary = "No tank has positive net inflow."
+    summary = "No hall has positive net heat gain."
     if rising:
         tank = tanks[rising]
         if tank["inflow"] > tank["outflow"]:
-            summary = f"{rising} receives {tank['inflow']:g} bbl/hr and discharges {tank['outflow']:g} bbl/hr."
+            summary = f"{rising} absorbs {tank['inflow']:g} kW of heat load while {tank['outflow']:g} kW is removed."
     surges = [a for a, v in ctx.dto["sources"].items() if v["eff_rate"] > v["rate"]]
     restrictions = [a for a, v in ctx.dto["pipelines"].items() if v["r"] > 1.01]
     restrictions.extend(a for a, v in ctx.dto["treatment"].items() if v["intake_factor"] < 1)
     if surges:
-        summary += " Elevated inflow at " + ", ".join(surges) + "."
+        summary += " Elevated heat load at " + ", ".join(surges) + "."
     if restrictions:
-        summary += " Restricted discharge at " + ", ".join(restrictions) + "."
+        summary += " Restricted heat removal at " + ", ".join(restrictions) + "."
     return Report(FLOW, model, summary, ids)
 
 
@@ -63,10 +63,10 @@ def pump_report(ctx, model):
         if not p["available"] or p["run_state"] == "TRIPPED":
             findings.append(f"{asset} is {'tripped' if p['run_state'] == 'TRIPPED' else 'unavailable'}.")
         elif p["eff_capacity_factor"] < .99:
-            findings.append(f"{asset} delivers {p['flow']:g} bbl/hr at {p['eff_capacity_factor']:.0%} effective capacity.")
+            findings.append(f"{asset} delivers {p['flow']:g} kW at {p['eff_capacity_factor']:.0%} effective capacity.")
         elif p["role"] == "standby":
-            findings.append(f"{asset} is available, {p['run_state'].lower()}, delivering {p['flow']:g} bbl/hr.")
-    return Report(PUMP, model, " ".join(findings) or "No pump trip, unavailability or loss of effective capacity detected.", ids)
+            findings.append(f"{asset} is available, {p['run_state'].lower()}, delivering {p['flow']:g} kW.")
+    return Report(PUMP, model, " ".join(findings) or "No chiller-pump trip, unavailability or loss of effective capacity detected.", ids)
 
 
 class Investigation:
@@ -102,7 +102,7 @@ class Investigation:
                 coordinator = report is self.coordinator
                 prompt = (f"You are the {report.role}. {PROMPTS[report.role]} "
                           "Write one short qualitative interpretation. Leave readings, times and percentages "
-                          "to the evidence cards. Refer to assets by role (the filling tank, the standby pump). "
+                          "to the evidence cards. Refer to assets by role (the overheating hall, the standby chiller pump). "
                           "Use exact supplied evidence IDs in the citation fields only.")
                 answer = await gateway.analyze(ctx, prompt, seed,
                                                complex_task=coordinator, evidence_only=not (coordinator and self.active_incident),

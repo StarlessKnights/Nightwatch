@@ -21,9 +21,9 @@ def briefing(ctx, group):
     summary = rec.headline
     if trend and len(trend["samples"]) > 1:
         delta = trend["change_bbl"]
-        direction = f"rose {delta:g} bbl" if delta > 0 else f"fell {abs(delta):g} bbl" if delta < 0 else "was unchanged"
-        summary = f"{trend['tank']} volume {direction} from T+{ctx.brief['from_min']} to T+{ctx.state.t_min}."
-        evidence_ids.append(ctx.fact("get_shift_brief", "shift.brief", ctx.brief, "Observed tank trends")["id"])
+        direction = f"rose {delta:g} kWh" if delta > 0 else f"fell {abs(delta):g} kWh" if delta < 0 else "was unchanged"
+        summary = f"{trend['tank']} stored heat {direction} from T+{ctx.brief['from_min']} to T+{ctx.state.t_min}."
+        evidence_ids.append(ctx.fact("get_shift_brief", "shift.brief", ctx.brief, "Observed hall trends")["id"])
     recommendation = ctx.fact("get_recommendations", "recommendation", {
         "ranked_option_ids": rec.ranked_option_ids, "best_option_id": rec.best_option_id,
         "do_nothing_cost": rec.do_nothing_cost, "horizon_min": ctx.cfg.time.horizon_min,
@@ -39,6 +39,6 @@ def briefing(ctx, group):
             "title": "Network condition: " + ", ".join(group["roots"]), "roots": group["roots"],
             "tanks": group["tanks"], "affected_assets": sorted(affected), "evidence_ids": evidence_ids,
             "summary": summary, "automatic": auto, "interpretations": [], "concerns": review(ctx, recommendation["id"]),
-            "attention": ("Check whether tank levels stabilize after the automatic response." if auto
-                          else "Compare observed tank levels with the forecast and check the affected equipment."),
+            "attention": ("Check whether hall temperatures stabilize after the automatic response." if auto
+                          else "Compare observed hall levels with the forecast and check the affected equipment."),
             "source": "DETERMINISTIC", "question": None}

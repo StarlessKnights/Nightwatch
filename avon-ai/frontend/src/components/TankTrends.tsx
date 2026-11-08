@@ -27,7 +27,7 @@ export function TankTrends({ env, network, history, rec, selected, visible = tru
   return (
     <div className="panel-fill">
       <div className="panel-head">
-        <h3>Tank trends</h3>
+        <h3>Hall trends</h3>
         <div className="seg">{tanks.map((t) => <button key={t} className={t === tank ? 'on' : ''} onClick={() => setTank(t)}>{t}</button>)}</div>
         <div className="legend">
           <span style={{ color: 'var(--flow)' }}>━ history</span> <span style={{ color: 'var(--warn)' }}>┅ forecast (as-is)</span>

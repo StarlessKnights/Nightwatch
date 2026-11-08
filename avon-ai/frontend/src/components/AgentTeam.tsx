@@ -5,8 +5,8 @@ import { OperatorDialog } from './OperatorDialog'
 import './agentTeam.css'
 
 const descriptions: Record<string, string> = {
-  'Inflow/Outflow Monitor': 'Tank balance and restrictions',
-  'Pump Monitor': 'Pump health and standby readiness',
+  'Thermal Load Monitor': 'Heat balance and cooling restrictions',
+  'Cooling Plant Monitor': 'Chiller health and N+1 readiness',
   Coordinator: 'Operator briefing',
 }
 

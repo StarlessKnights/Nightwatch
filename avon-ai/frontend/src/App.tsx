@@ -31,7 +31,7 @@ export default function App() {
   const [showIntelligence, setShowIntelligence] = useState(true)
   const [focus, setFocus] = useState<{ run: string; assets: string[] } | null>(null)
 
-  if (!network || !env) return <div className="loading">{error ?? 'Connecting to AVON AI backend…'}</div>
+  if (!network || !env) return <div className="loading">{error ?? 'Connecting to NIGHTWATCH backend…'}</div>
   const disclaimer: string = network.config.ui.disclaimer
   const incidentAssets = focus?.run === env.state.run_id ? focus.assets
     : intelligence.data?.incidents?.filter((i) => i?.status === 'active').flatMap((i) => i?.affected_assets ?? []) ?? []
@@ -97,18 +97,18 @@ export default function App() {
       </div>
 
       <main className={`plant-main ${inspectorOpen ? '' : 'inspector-collapsed'}`}>
-        <section className="graph-workspace" aria-label="Produced-water network">
+        <section className="graph-workspace" aria-label="Cooling plant network">
           <div className="workspace-heading">
             <div className="workspace-title">
-              <h1>Produced-water network</h1>
+              <h1>Cooling plant network</h1>
               <details className="network-context">
                 <summary>About this network</summary>
-                <p>Oilfield saltwater collection and treatment</p>
-                <ol className="process-stages" aria-label="Produced-water process">
-                  <li>Oilfield collection</li>
-                  <li>Saltwater storage</li>
-                  <li>Pumps &amp; pipelines</li>
-                  <li>Treatment</li>
+                <p>IT heat load, chilled-water loops and heat rejection</p>
+                <ol className="process-stages" aria-label="Cooling process">
+                  <li>IT heat load</li>
+                  <li>Hall thermal mass</li>
+                  <li>Chillers &amp; loops</li>
+                  <li>Heat rejection</li>
                 </ol>
                 <p>Latest forecast at T+{env.forecast.as_of_min} min.</p>
               </details>
@@ -138,17 +138,17 @@ export default function App() {
             <div>
               <strong>
                 {shutInTanks.length
-                  ? `Inflow shut in · ${shutInTanks.join(', ')}`
+                  ? `IT load shed · ${shutInTanks.join(', ')}`
                   : nextHighHigh
-                  ? `${nextHighHigh.tank} · inflow shutdown forecast in ${Math.ceil(minutesToShutdown!)} min`
+                  ? `${nextHighHigh.tank} · load-shed forecast in ${Math.ceil(minutesToShutdown!)} min`
                   : 'No high-high crossing forecast'}
               </strong>
               {(shutInTanks.length > 0 || nextHighHigh) && (
                 <span>
                   {shutInTanks.length
-                    ? 'High-high protection has stopped oilfield inflow.'
+                    ? 'High-high protection has shed IT load.'
                     : nextHighHigh
-                    ? `High-high at ${clock(env.forecast.as_of_min + nextHighHigh.time_to_HH!, network.config.ui.start_clock)} shuts in inflow to protect against a spill.`
+                    ? `High-high at ${clock(env.forecast.as_of_min + nextHighHigh.time_to_HH!, network.config.ui.start_clock)} sheds IT load to protect against a thermal event.`
                     : ''} Forecast at T+{env.forecast.as_of_min} min.
                 </span>
               )}
@@ -170,8 +170,8 @@ export default function App() {
             />
           </div>
           <div className="graph-caption">
-            <span><i />Saltwater flow in bbl/hr</span>
-            <span>Double-click a pump for details</span>
+            <span><i />Heat removal in kW</span>
+            <span>Double-click a chiller pump for details</span>
           </div>
         </section>
 
@@ -180,7 +180,7 @@ export default function App() {
             {detailId && <PumpDetailPanel id={detailId} env={env} network={network} onClose={() => setDetailId(null)} />}
             <div className="inspector-view" hidden={!!detailId}>
               <div className="panel-switch">
-                <button aria-pressed={showIntelligence} className={showIntelligence ? 'on' : ''} onClick={() => setShowIntelligence(true)}>AVON Intelligence</button>
+                <button aria-pressed={showIntelligence} className={showIntelligence ? 'on' : ''} onClick={() => setShowIntelligence(true)}>NIGHTWATCH Intelligence</button>
                 <button aria-pressed={!showIntelligence} className={!showIntelligence ? 'on' : ''} onClick={() => setShowIntelligence(false)}>Decision engine</button>
               </div>
               <div className="inspector-view" hidden={!showIntelligence}>

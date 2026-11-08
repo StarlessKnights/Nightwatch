@@ -311,7 +311,7 @@ class Agent:
         lower = message.lower()
         question = None
         if any(x in lower for x in ("what if", "what happens", "simulate", "scenario")):
-            if target is None and "treatment" in lower:
+            if target is None and ("treatment" in lower or "heat rejection" in lower):
                 target = next(iter(ctx.topo.treatments), None)
             spec = None
             if target and ctx.topo.kind(target) == "pump" and any(x in lower for x in ("unavailable", "trip", "fail")):
@@ -326,7 +326,7 @@ class Agent:
             if spec:
                 await asyncio.to_thread(ctx.execute, "submit_scenario_proposal", {"faults": [spec]})
             else:
-                question = "Which asset and fault should I simulate? For example: P-204 unavailable, or treatment capacity drops by 50%."
+                question = "Which asset and fault should I simulate? For example: CHP-2 unavailable, or heat rejection capacity drops by 50%."
         elif any(x in lower for x in HANDOFF_TERMS):
             if not any(e["source"] == "get_shift_brief" for e in ctx.evidence.values()):
                 await asyncio.to_thread(ctx.execute, "get_shift_brief", {})

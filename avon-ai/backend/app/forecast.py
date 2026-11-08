@@ -54,7 +54,7 @@ def rollout(state: SimState, topo: Topology, cfg: Config, actions: list | tuple 
 
 
 def closed_form_time_to_limit(volume: float, limit: float, inflow: float, outflow: float) -> float | None:
-    """Constant-rate estimate in minutes (bbl, bbl/hr). Used as a regression check against rollout()."""
+    """Constant-rate estimate in minutes (kWh, kW). Used as a regression check against rollout()."""
     if volume >= limit:
         return 0.0
     net = inflow - outflow

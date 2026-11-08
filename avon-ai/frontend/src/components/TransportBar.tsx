@@ -11,7 +11,7 @@ export function TransportBar({ env, network, connected, run }: Props) {
   const speeds: number[] = network.config.ui.speeds
   return (
     <header className="transport">
-      <div className="plant-identity"><div className="brand">AVON AI</div><span>Produced-water operations</span></div>
+      <div className="plant-identity"><div className="brand">NIGHTWATCH</div><span>Data center cooling operations</span></div>
       <div className="connection"><span className={`dot ${connected ? 'ok' : 'bad'}`} />{connected ? 'Connected' : 'Reconnecting'}</div>
       <div className="clock"><span>Simulation time</span>{env.state.clock} <small>T+{env.state.t_min} min</small></div>
       <div className="spacer" />
@@ -32,12 +32,12 @@ export function TransportBar({ env, network, connected, run }: Props) {
         {network.scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
       </select></label>
       <button onClick={() => run(api.reset)}>⟲ Reset</button>
-      <label className="toggle" title="Layer 2: also start the standby when the duty pump delivers low flow (default off, so degradation shows the gap AVON AI fills)">
+      <label className="toggle" title="Layer 2: also start the standby chiller pump when the duty pump delivers low flow (default off, so degradation shows the gap NIGHTWATCH fills)">
         <input type="checkbox" checked={env.auto_changeover_on_low_flow}
           onChange={(e) => run(() => api.patchConfig({ control: { auto_changeover_on_low_flow: e.target.checked } }))} />
         Auto-changeover on low flow
       </label>
-      <label className="toggle" title="Disable AVON AI to show the interlock works on its own">
+      <label className="toggle" title="Disable NIGHTWATCH to show the interlock works on its own">
         <input type="checkbox" checked={env.engine_enabled} onChange={(e) => run(() => api.engine(e.target.checked))} />
         Decision engine
       </label>

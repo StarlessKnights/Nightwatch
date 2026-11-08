@@ -92,7 +92,7 @@ def alarm_pass(state: SimState, topo: Topology, cfg: Config) -> tuple[SimState, 
 
 
 def predictive_pass(state: SimState, cfg: Config, time_to_hh: dict) -> tuple[SimState, list[Event]]:
-    """AVON AI predictive alarm: forecast time-to-HH below threshold. Applied by the session, not step()."""
+    """NIGHTWATCH predictive alarm: forecast time-to-HH below threshold. Applied by the session, not step()."""
     st = cfg.status
     conds = []
     for tank, tth in time_to_hh.items():

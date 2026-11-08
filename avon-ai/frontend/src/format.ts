@@ -15,7 +15,7 @@ export const compactNumber = (v: number) => v.toLocaleString(undefined, { maximu
 
 const eventTerms: Record<string,string> = {
   PUMP_DEGRADE: 'reduced pump capacity', PUMP_TRIP: 'pump trip', PUMP_UNAVAILABLE: 'pump unavailable',
-  TREATMENT_CONSTRAINT: 'reduced treatment capacity', PIPELINE_RESTRICTION: 'pipeline restriction',
-  INFLOW_SURGE: 'inflow surge', LEVEL_SENSOR_FAULT: 'level sensor fault', FORECAST_HH: 'predicted high-high level',
+  TREATMENT_CONSTRAINT: 'reduced heat rejection', PIPELINE_RESTRICTION: 'loop restriction',
+  INFLOW_SURGE: 'IT load surge', LEVEL_SENSOR_FAULT: 'temperature sensor fault', FORECAST_HH: 'predicted high-high thermal level',
 }
 export const eventText = (text: string) => text.replace(/\b[A-Z]+(?:_[A-Z]+)+\b/g, term => eventTerms[term] ?? term)
