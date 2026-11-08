@@ -12,6 +12,7 @@ from .handoff import shift_brief
 
 
 TOOL_MODELS = {
+    "get_workload_plan": EmptyArgs,
     "get_shift_brief": EmptyArgs,
     "get_network_state": EmptyArgs, "get_asset_state": AssetArgs, "get_forecast": EmptyArgs,
     "get_impact": AssetArgs, "get_recommendations": EmptyArgs, "get_event_history": HistoryArgs,
@@ -20,6 +21,7 @@ TOOL_MODELS = {
     "submit_scenario_proposal": ScenarioProposal,
 }
 DESCRIPTIONS = {
+    "get_workload_plan": "Compare validated workload relief and cooling options. No destination capacity or job SLAs are modeled.",
     "get_shift_brief": "For handovers or questions about changes, read measured hall thermal trends, recent events, unacknowledged alarms and the next forecast high-high crossing.",
     "get_network_state": "Read the cooling network graph and current asset conditions. Transfer edges are not simulated routes.",
     "get_asset_state": "Read current values for one asset.",
@@ -126,7 +128,20 @@ class Context:
             raise ValueError("Tool not allowed")
         args = TOOL_MODELS[name].model_validate(arguments)
         self.audit.record(self.run_id, "tool_call", {"name": name, "arguments": args.model_dump(), "revision": self.revision})
-        if name == "get_shift_brief":
+        if name == "get_workload_plan":
+            rec = self.recommendation()
+            options = [self.option_summary(o) for o in rec.options]
+            relief = [o for o in options if "REDUCE_PRODUCTION" in o["action_id"]]
+            viable = [o for o in relief if o["feasible"]]
+            result = self.fact(name, "workload.plan", {
+                "summary": ("Validated workload-relief options are available; compare service cost and thermal margin with cooling responses. "
+                            if viable else "No feasible workload-relief option is available in the current deterministic ranking. ")
+                           + "Destination headroom, job priority and SLA constraints require operator confirmation.",
+                "workload_options": relief,
+                "cooling_options": [o for o in options if "REDUCE_PRODUCTION" not in o["action_id"]],
+                "destination_capacity_modeled": False, "sla_modeled": False,
+            }, "Workload and cooling comparison")
+        elif name == "get_shift_brief":
             result = self.fact(name, "shift.brief", self.brief, "Shift handoff")
         elif name == "get_network_state":
             result = {"graph": {"nodes": [{"id": n, "type": v["type"]} for n, v in self.topo.nodes.items()],

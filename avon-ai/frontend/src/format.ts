@@ -14,6 +14,7 @@ export function clock(tMin: number, start = '00:00'): string {
 export const compactNumber = (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 1 })
 
 const eventTerms: Record<string,string> = {
+  REDUCE_PRODUCTION: 'Workload relief', DISPATCH_TRUCK: 'Portable cooling', START_STANDBY_PUMP: 'Start standby cooling',
   PUMP_DEGRADE: 'reduced pump capacity', PUMP_TRIP: 'pump trip', PUMP_UNAVAILABLE: 'pump unavailable',
   TREATMENT_CONSTRAINT: 'reduced heat rejection', PIPELINE_RESTRICTION: 'loop restriction',
   INFLOW_SURGE: 'IT load surge', LEVEL_SENSOR_FAULT: 'temperature sensor fault', FORECAST_HH: 'predicted high-high thermal level',

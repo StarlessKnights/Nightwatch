@@ -5,9 +5,10 @@ import { OperatorDialog } from './OperatorDialog'
 import './agentTeam.css'
 
 const descriptions: Record<string, string> = {
-  'Thermal Load Monitor': 'Heat balance and cooling restrictions',
-  'Cooling Plant Monitor': 'Chiller health and N+1 readiness',
-  Coordinator: 'Operator briefing',
+  'Thermal Capacity Agent': 'Heat balance and cooling restrictions',
+  'Cooling Reliability Agent': 'Chiller health and N+1 readiness',
+  'Workload Placement Agent': 'Compute relief and cooling tradeoffs',
+  'Incident Commander': 'Operator briefing',
 }
 
 function modelLabel(model: string) {
@@ -27,11 +28,11 @@ function TeamNode({ report, selected, select }: { report: TeamReport; selected: 
 }
 
 export function AgentTeam({ data, inspect, ask }: { data: AgentState; inspect: (id: string) => void; ask: () => void }) {
-  const [selected, setSelected] = useState('Coordinator')
+  const [selected, setSelected] = useState('Incident Commander')
   const [expanded, expand] = useState(false)
   const team = data.team
   if (!team) return <p className="agent-empty">{data.enabled ? 'Waiting for the first plant observation…' : 'Enable Intelligence to start the agent team.'}</p>
-  const coordinator = team.reports.find(r => r.role === 'Coordinator')!
+  const coordinator = team.reports.find(r => r.role === 'Incident Commander')!
   const report = team.reports.find(r => r.role === selected) ?? coordinator
   const refs = (ids: string[]) => <div className="evidence-links">{ids.map(id => data.evidence[id] &&
     <button key={id} onClick={() => inspect(id)}>{evidenceLabel(data.evidence[id])}</button>)}</div>
@@ -48,15 +49,18 @@ export function AgentTeam({ data, inspect, ask }: { data: AgentState; inspect: (
     <section className="team-report" aria-label={report.role + ' findings'}>
       <header><h4>{report.role}</h4><span>{report.source ?? report.status}</span></header>
       <small title={report.model}>Assigned model · {modelLabel(report.model)}</small>
-      <p>{report.observation || 'The Coordinator will review both specialist handoffs.'}</p>
+      <p>{report.observation || 'The Commander will review the specialist handoffs.'}</p>
       {report.interpretations.map((finding,i) => <div className="team-finding" key={i}>{finding.text}{refs(finding.evidence_ids)}</div>)}
       {report.error && <p className="hint">{report.error}</p>}
+      <details className="team-trace"><summary>Tool calls ({report.tool_events.length})</summary>
+        {report.tool_events.map((event, i) => <div key={i}><span>{event.tool} · {event.status}{event.origin && ` · ${event.origin}`}</span>{refs(event.evidence_ids)}</div>)}
+      </details>
       {report.evidence_ids.length > 0 && <details><summary>Source readings ({report.evidence_ids.length})</summary>{refs(report.evidence_ids)}</details>}
     </section>
     <details className="team-trace"><summary>Handoff history ({team.events.length})</summary>
       {team.events.map((event,i) => <div key={i}><time>+{event.elapsed_s}s</time><span>{event.role} · {event.status}{event.source && ' · ' + event.source}</span></div>)}
     </details>
-    <button className="case-link" onClick={ask}>Ask the Coordinator ↗</button>
+    <button className="case-link" onClick={ask}>Ask the Commander ↗</button>
   </div>
   return expanded ? <OperatorDialog title="Agent investigation" close={() => expand(false)}>{view}</OperatorDialog> : view
 }

@@ -13,7 +13,7 @@ function Cost({ o }: { o: Option }) {
   const c = o.cost_breakdown
   return (
     <div className="hint">
-      fixed {money(c.fixed)} · running {money(c.hourly)} · lost production {money(c.production_loss)} · consequence {money(c.expected_consequence)}
+      fixed {money(c.fixed)} · running {money(c.hourly)} · compute service impact {money(c.production_loss)} · consequence {money(c.expected_consequence)}
     </div>
   )
 }
@@ -54,7 +54,7 @@ export function Recommendations({ env, rec, selectedId, onSelect, run, disclaime
             <span className="cost"><small>Modeled cost</small>{money(o.cost_breakdown.total)}</span>
           </div>
           <Cost o={o} />
-          <div className="response-timing"><span><small>Action deadline</small>{o.act_by_clock ?? 'No forecast deadline'}</span><span><small>Lead time</small>{o.lead_time_min} min</span><span><small>High-high margin</small>{num(o.margin_bbl, 0)} bbl</span></div>
+          <div className="response-timing"><span><small>Action deadline</small>{o.act_by_clock ?? 'No forecast deadline'}</span><span><small>Lead time</small>{o.lead_time_min} min</span><span><small>High-high margin</small>{num(o.margin_bbl, 0)} kWh</span></div>
           {o.trajectory_summary && <p className="response-outcome">{Object.values(o.trajectory_summary).every(tank => tank.time_to_HH === null) ? 'No high-high crossing modeled with this response.' : 'High-high crossing remains in the modeled forecast.'}</p>}
           {o.cost_breakdown.total != null && dn.cost_breakdown.total != null && <div className="hint">{dn.cost_breakdown.total >= o.cost_breakdown.total ? `${money(dn.cost_breakdown.total - o.cost_breakdown.total)} lower modeled cost than doing nothing` : `${money(o.cost_breakdown.total - dn.cost_breakdown.total)} higher modeled cost than doing nothing`}</div>}
           <button className="primary" onClick={(e) => { e.stopPropagation(); run(() => api.approve(o.action_id)) }}>Approve in simulation</button>

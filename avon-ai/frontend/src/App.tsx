@@ -67,7 +67,7 @@ export default function App() {
             {(shutInTanks.length > 0 || nextHighHigh) && <span>{shutInTanks.length ? 'High-high protection has shed IT load.' : nextHighHigh ? `High-high at ${clock(env.forecast.as_of_min + nextHighHigh.time_to_HH!, network.config.ui.start_clock)} sheds IT load to protect against a thermal event.` : ''} Forecast at T+{env.forecast.as_of_min} min.</span>}</div>
             {(nextHighHigh || shutInTanks.length > 0) && <button onClick={() => { setInspectorOpen(true); setDetailId(null); setShowIntelligence(false) }}>Compare responses</button>}
           </div>
-          <div className="graph-canvas"><NetworkDiagram key={env.state.run_id} env={env} network={network} onPumpDetail={id => { setDetailId(id); setInspectorOpen(true) }} incidentAssets={incidentAssets} /></div>
+          <div className="graph-canvas"><NetworkDiagram key={env.state.run_id} env={env} network={network} intelligence={intelligence.data} onPumpDetail={id => { setDetailId(id); setInspectorOpen(true) }} incidentAssets={incidentAssets} /></div>
           <div className="graph-caption"><span><i />Heat removal in kW</span><span>Double-click a chiller pump for details</span></div>
         </section>
         <aside id="plant-inspector" className="right with-intelligence" hidden={!inspectorOpen} aria-label="Plant inspector">
