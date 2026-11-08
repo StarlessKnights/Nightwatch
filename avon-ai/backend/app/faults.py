@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+from . import pump_model
+from .models import Config
 from .network import Topology
 from .state import Fault, SimState
 
@@ -10,11 +12,11 @@ from .state import Fault, SimState
 FAULT_CATALOG = {
     "PUMP_TRIP": {"target_kind": "pump", "params": {}, "handled_by": "Layer 2 auto changeover"},
     "PUMP_DEGRADE": {"target_kind": "pump", "handled_by": "AVON AI (not auto-handled)",
-                     "params": {"factor": {"min": 0.1, "max": 0.95, "step": 0.05, "default": 0.45},
+                     "params": {"w": {"min": 0.1, "max": 0.95, "step": 0.05, "default": 0.299},
                                 "ramp_min": {"min": 0, "max": 60, "step": 5, "default": 0}}},
     "PUMP_UNAVAILABLE": {"target_kind": "pump", "params": {}, "handled_by": "Excluded from actions and auto-start"},
     "PIPELINE_RESTRICTION": {"target_kind": "pipeline", "handled_by": "AVON AI",
-                             "params": {"factor": {"min": 0.1, "max": 0.95, "step": 0.05, "default": 0.5}}},
+                             "params": {"r": {"min": 1.5, "max": 12, "step": 0.5, "default": 9.9}}},
     "TREATMENT_CONSTRAINT": {"target_kind": "treatment", "handled_by": "AVON AI",
                              "params": {"factor": {"min": 0.1, "max": 0.95, "step": 0.05, "default": 0.5}}},
     "INFLOW_SURGE": {"target_kind": "source", "handled_by": "AVON AI",
@@ -33,23 +35,25 @@ def is_active(f: Fault, t: int) -> bool:
 
 @dataclass
 class Effective:
-    pump_cf: dict
+    pump_w: dict  # effective pump health
+    pump_cf: dict  # derived display value Q(w,s,r)/Q(1,1,1)
     pump_available: dict
     pump_trip: set
     source_mult: dict
-    pipeline_rf: dict
+    pipeline_r: dict
     treatment_if: dict
     sensor_faults: dict  # tank -> {transmitter: Fault}
 
 
-def effective(state: SimState, topo: Topology) -> Effective:
+def effective(state: SimState, topo: Topology, cfg: Config) -> Effective:
     t = state.t_min
     eff = Effective(
-        pump_cf={p: s.capacity_factor for p, s in state.pumps.items()},
+        pump_w={p: s.health for p, s in state.pumps.items()},
+        pump_cf={},
         pump_available={p: s.available for p, s in state.pumps.items()},
         pump_trip=set(),
         source_mult={s: 1.0 for s in state.sources},
-        pipeline_rf={p: s.restriction_factor for p, s in state.pipelines.items()},
+        pipeline_r={p: s.r for p, s in state.pipelines.items()},
         treatment_if={p: s.intake_factor for p, s in state.treatment.items()},
         sensor_faults={},
     )
@@ -62,17 +66,19 @@ def effective(state: SimState, topo: Topology) -> Effective:
         elif f.type == "PUMP_DEGRADE":
             ramp = p.get("ramp_min", 0) or 0
             frac = 1.0 if ramp <= 0 else min(1.0, (t - f.start_min) / ramp)
-            eff.pump_cf[f.target] *= 1.0 + (p["factor"] - 1.0) * frac
+            eff.pump_w[f.target] *= 1.0 + (p["w"] - 1.0) * frac
         elif f.type == "PUMP_UNAVAILABLE":
             eff.pump_available[f.target] = False
         elif f.type == "PIPELINE_RESTRICTION":
-            eff.pipeline_rf[f.target] *= p["factor"]
+            eff.pipeline_r[f.target] *= p["r"]
         elif f.type == "TREATMENT_CONSTRAINT":
             eff.treatment_if[f.target] *= p["factor"]
         elif f.type == "INFLOW_SURGE":
             eff.source_mult[f.target] *= p["multiplier"]
         elif f.type == "LEVEL_SENSOR_FAULT":
             eff.sensor_faults.setdefault(f.target, {})[p.get("transmitter", "A")] = f
+    for pid, info in topo.pumps.items():
+        eff.pump_cf[pid] = pump_model.capacity_factor(eff.pump_w[pid], 1.0, eff.pipeline_r[info.pipeline], cfg.pump_model)
     return eff
 
 

@@ -76,6 +76,29 @@ class ActionsCfg(_M):
     DISPATCH_TRUCK: dict
 
 
+class PumpModelCfg(_M):
+    H0: float
+    Qmax: float
+    Hs: float
+    k: float
+
+
+class DiagnosisCfg(_M):
+    window_min: int
+    min_flow_for_diagnosis: float
+    wear_w_max: float
+    wear_r_max: float
+    restriction_r_min: float
+    restriction_w_min: float
+
+
+class HistoryCfg(_M):
+    buffer_min: int
+    cosmetic_noise: bool
+    noise_Q_bbl_hr: float
+    noise_P: float
+
+
 class UiCfg(_M):
     disclaimer: str
     speeds: list[int]
@@ -94,6 +117,9 @@ class Config(_M):
     consequence: ConsequenceCfg
     decision: DecisionCfg
     actions: ActionsCfg
+    pump_model: PumpModelCfg
+    diagnosis: DiagnosisCfg
+    history: HistoryCfg
     ui: UiCfg
 
 
@@ -122,7 +148,8 @@ class FaultRequest(BaseModel):
 
 
 class AssetPatch(BaseModel):
-    capacity_factor: Optional[float] = None
+    health: Optional[float] = None  # pump health w (1 = new)
+    capacity_factor: Optional[float] = None  # deprecated alias for health
     available: Optional[bool] = None
 
 
@@ -178,6 +205,13 @@ class Option(BaseModel):
     trajectory_summary: Optional[dict]
 
 
+class Diagnosis(BaseModel):
+    code: str  # PUMP_WEAR | RESTRICTION | COMPOUND | NONE | FLOW_TOO_LOW
+    w_est: Optional[float]
+    r_est: Optional[float]
+    evidence: list[dict] = []
+
+
 class Affected(BaseModel):
     upstream: list[str]
     downstream: list[str]
@@ -191,6 +225,7 @@ class Recommendation(BaseModel):
     status: str
     forecast: dict[str, TankForecast]
     probable_cause: list[Cause]
+    diagnosis: dict[str, Diagnosis] = {}
     affected_assets: Affected
     options: list[Option]
     ranked_option_ids: list[str]

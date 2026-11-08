@@ -90,7 +90,7 @@ def _trucks_in_use(state: SimState) -> int:
     return len(in_flight) + sum(1 for p in state.pending_actions if p.kind == DISPATCH_TRUCK)
 
 
-def preconditions(a: Action, state: SimState, eff: Effective, topo: Topology, cfg: Config, dt_h: float,
+def preconditions(a: Action, state: SimState, eff: Effective, topo: Topology, cfg: Config,
                   extra_trucks: int = 0) -> list[str]:
     """Hard-constraint reason codes (empty = OK)."""
     if a.kind == START_STANDBY_PUMP:
@@ -100,8 +100,8 @@ def preconditions(a: Action, state: SimState, eff: Effective, topo: Topology, cf
         if state.pumps[p].run_state != STOPPED:
             return ["PRECONDITION_FAILED"]
         # Would starting it actually move more water, or is the path already the limit?
-        base = _alloc(state, eff, topo, dt_h, {})
-        more = _alloc(state, eff, topo, dt_h, {p: True})
+        base = _alloc(state, eff, topo, cfg, {})
+        more = _alloc(state, eff, topo, cfg, {p: True})
         tank = topo.pumps[p].tank
         if more.tank_outflow[tank] - base.tank_outflow[tank] < 1.0:
             lim = more.pump_limited_by[p]
@@ -115,17 +115,17 @@ def preconditions(a: Action, state: SimState, eff: Effective, topo: Topology, cf
     return []
 
 
-def _alloc(state, eff, topo, dt_h, force_on: dict):
+def _alloc(state, eff, topo, cfg, force_on: dict):
     return flow.allocate(
         topo,
         volumes={t: s.volume_bbl for t, s in state.tanks.items()},
         pump_on={p: (force_on.get(p, s.run_state == "RUNNING") and eff.pump_available[p]) for p, s in state.pumps.items()},
-        pump_cf=eff.pump_cf,
-        pipeline_cap={p: s.max_flow * eff.pipeline_rf[p] for p, s in state.pipelines.items()},
+        pump_w=eff.pump_w, pump_model_cfg=cfg.pump_model,
+        pipeline_cap={p: s.max_flow for p, s in state.pipelines.items()}, pipeline_r=eff.pipeline_r,
         treatment_cap={p: s.max_intake * eff.treatment_if[p] for p, s in state.treatment.items()},
         source_rate={s: st.rate_bbl_hr * eff.source_mult[s] * (1 - st.curtailment_pct / 100) * (0 if st.shut_in else 1)
                      for s, st in state.sources.items()},
-        dt_h=dt_h,
+        dt_h=cfg.time.dt_min / 60,
     )
 
 

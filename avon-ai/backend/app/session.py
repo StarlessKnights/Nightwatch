@@ -6,7 +6,9 @@ from dataclasses import replace
 import numpy as np
 
 from . import actions as act
-from . import alarms, decision, faults, messages
+from collections import deque
+
+from . import alarms, decision, diagnosis, faults, messages, pump_model
 from .forecast import rollout, tank_forecasts
 from .models import Config, Recommendation, load_config, patch_config
 from .network import Topology, impact, load_topology
@@ -45,7 +47,12 @@ class Session:
         self.forecast_do_nothing: dict | None = None
         self._unsent_events: list[dict] = []
         self._unsent_history: list[dict] = []
+        buf = self.cfg.history.buffer_min
+        self.pump_history = {p: deque(maxlen=buf) for p in self.topo.pumps}
+        self.tank_history = {t: deque(maxlen=buf) for t in self.topo.tanks}
+        self.noise_rng = np.random.default_rng(meta.get("seed", 0) + 1)
         self._record_history()
+        self._record_telemetry(0)
         if announce:
             self.log(Event(0, SYSTEM, "SCENARIO_LOADED", None, {"name": meta["name"]}))
         self.refresh_forecast()
@@ -69,12 +76,40 @@ class Session:
         self._unsent_history.append(pt)
         del self.history[:-self.cfg.ui.history_points]
 
+    def _flows(self):
+        if self.state.flows is not None:
+            return self.state.flows
+        return act._alloc(self.state, faults.effective(self.state, self.topo, self.cfg), self.topo, self.cfg, {})
+
+    def _record_telemetry(self, t: int) -> None:
+        """Per-pump {Q,P,w,r,s} and per-tank flows into ring buffers (1-minute samples)."""
+        fr, h = self._flows(), self.cfg.history
+        for p, op in fr.pump_op.items():
+            q, pr = op["Q"], op["P"]
+            if h.cosmetic_noise and q > 0:  # cosmetic only: never feeds interlock or decision engine
+                q = max(q + float(self.noise_rng.normal(0, h.noise_Q_bbl_hr)), 0.0)
+                pr = max(pr + float(self.noise_rng.normal(0, h.noise_P)), 0.0)
+            rec = {"t_min": t, "Q": round(q, 2), "P": round(pr, 2), "w": round(op["w"], 4), "r": round(op["r"], 3),
+                   "s": op["s"], "flow": round(fr.pump_flow[p], 2), "run_state": self.state.pumps[p].run_state}
+            self._put(self.pump_history[p], rec)
+        for tk, ts in self.state.tanks.items():
+            self._put(self.tank_history[tk], {"t_min": t, "volume": round(ts.volume_bbl, 2),
+                                              "inflow": round(fr.tank_inflow[tk], 2), "outflow": round(fr.tank_outflow[tk], 2)})
+
+    @staticmethod
+    def _put(buf: deque, rec: dict) -> None:
+        if buf and buf[-1]["t_min"] == rec["t_min"]:
+            buf[-1] = rec
+        else:
+            buf.append(rec)
+
     # ---------- stepping ----------
     def advance(self, n: int = 1) -> None:
         for _ in range(n):
             self.state = step(self.state, self.topo, self.cfg, self.rng)
             self.log(*self.state.new_events)
             self._record_history()
+            self._record_telemetry(self.state.t_min - self.cfg.time.dt_min)
 
     def refresh_forecast(self) -> None:
         """Do-nothing rollout (includes already-approved actions) + AVON AI predictive alarms."""
@@ -109,13 +144,13 @@ class Session:
         self.log(Event(self.state.t_min, "FAULT", "FAULT_CLEARED", f.target, {"type": f.type}))
         self.refresh_forecast()
 
-    def patch_asset(self, asset_id: str, capacity_factor: float | None, available: bool | None) -> None:
+    def patch_asset(self, asset_id: str, health: float | None, available: bool | None) -> None:
         if asset_id not in self.state.pumps:
             raise KeyError(asset_id)
         ps, change = self.state.pumps[asset_id], []
-        if capacity_factor is not None:
-            ps = replace(ps, capacity_factor=min(max(capacity_factor, 0.0), 1.0))
-            change.append(f"capacity_factor={ps.capacity_factor:g}")
+        if health is not None:
+            ps = replace(ps, health=min(max(health, 0.0), 1.0))
+            change.append(f"health={ps.health:g}")
         if available is not None:
             ps = replace(ps, available=available)
             change.append(f"available={available}")
@@ -181,8 +216,8 @@ class Session:
     # ---------- serialization ----------
     def state_dict(self) -> dict:
         s, topo = self.state, self.topo
-        eff = faults.effective(s, topo)
-        fr = s.flows or act._alloc(s, eff, topo, self.cfg.time.dt_min / 60, {})
+        eff = faults.effective(s, topo, self.cfg)
+        fr = self._flows()
         fstat = {t: f["status"] for t, f in self.forecast.items()}
         rate = {sid: st.rate_bbl_hr * eff.source_mult[sid] * (1 - st.curtailment_pct / 100) * (0 if st.shut_in else 1)
                 for sid, st in s.sources.items()}
@@ -195,16 +230,18 @@ class Session:
                 "overflow_bbl": round(s.overflow_bbl[t], 2), "interlock": {"tripped": s.interlocks[t].tripped, "ll_tripped": s.interlocks[t].ll_tripped},
                 "trips": s.trip_counts[t]} for t, ts in s.tanks.items()},
             "pumps": {p: {
-                "role": ps.role, "run_state": ps.run_state, "capacity_factor": ps.capacity_factor,
+                "role": ps.role, "run_state": ps.run_state, "health": ps.health, "eff_health": round(eff.pump_w[p], 4),
                 "eff_capacity_factor": round(eff.pump_cf[p], 3), "available": eff.pump_available[p],
                 "flow": round(fr.pump_flow[p], 2), "limited_by": fr.pump_limited_by[p], "auto_started": ps.auto_started,
-                "tank": topo.pumps[p].tank, "pipeline": topo.pumps[p].pipeline} for p, ps in s.pumps.items()},
+                "tank": topo.pumps[p].tank, "pipeline": topo.pumps[p].pipeline,
+                "Q": round(fr.pump_op[p]["Q"], 2), "P": round(fr.pump_op[p]["P"], 2), "r": round(fr.pump_op[p]["r"], 3),
+                "diagnosis": self._diagnosis(p)} for p, ps in s.pumps.items()},
             "sources": {sid: {"rate": st.rate_bbl_hr, "eff_rate": round(st.rate_bbl_hr * eff.source_mult[sid], 2),
                               "flow": round(rate[sid], 2), "curtailment_pct": round(st.curtailment_pct, 1),
                               "curtail_target_pct": st.curtail_target_pct, "shut_in": st.shut_in} for sid, st in s.sources.items()},
             "pipelines": {pl: {"flow": round(fr.pipeline_flow[pl], 2), "max_flow": ps.max_flow,
-                               "restriction_factor": round(eff.pipeline_rf[pl], 3),
-                               "cap": round(ps.max_flow * eff.pipeline_rf[pl], 1)} for pl, ps in s.pipelines.items()},
+                               "r": round(eff.pipeline_r[pl], 3),
+                               "cap": round(fr.pipeline_cap[pl], 1)} for pl, ps in s.pipelines.items()},
             "treatment": {tr: {"flow": round(fr.treatment_flow[tr], 2), "max_intake": ts.max_intake,
                                "intake_factor": round(eff.treatment_if[tr], 3),
                                "cap": round(ts.max_intake * eff.treatment_if[tr], 1)} for tr, ts in s.treatment.items()},
@@ -242,6 +279,87 @@ class Session:
     def sync_message(self) -> dict:
         self._unsent_events, self._unsent_history = [], []
         return self.snapshot()
+
+    # ---------- pump detail ----------
+    def _diagnosis(self, pump_id: str) -> dict:
+        d = diagnosis.diagnose(list(self.pump_history[pump_id]), self.cfg)
+        return {**d, "text": messages.diagnosis_text(d["code"], d["w_est"], d["r_est"])}
+
+    def diagnosis(self, asset_id: str) -> dict:
+        if asset_id not in self.topo.pumps:
+            raise KeyError(asset_id)
+        return self._diagnosis(asset_id)
+
+    def _asset_events(self, asset_id: str, since: int) -> list[dict]:
+        topo = self.topo
+        related = {asset_id}
+        if asset_id in topo.pumps:
+            related |= {topo.pumps[asset_id].pipeline, topo.pumps[asset_id].tank}
+        else:
+            related |= set(topo.tank_sources[asset_id]) | set(topo.tank_pumps[asset_id])
+        kinds = {"FAULT_ACTIVE": "fault", "FAULT_INJECTED": "fault", "FAULT_CLEARED": "fault", "FAULT_ENDED": "fault",
+                 "STANDBY_AUTOSTART": "auto", "STANDBY_AUTOSTOP": "auto", "DUTY_AUTORESTART": "auto",
+                 "INTERLOCK_HH_TRIP": "trip", "INTERLOCK_LL_TRIP": "trip", "ACTION_APPROVED": "approval",
+                 "ACTION_EFFECTIVE": "approval", "ALARM_RAISED": "alarm"}
+        out, seen = [], set()
+        for e in self.event_log:
+            kind = kinds.get(e["code"])
+            if kind is None or e["t_min"] < since:
+                continue
+            if e["code"] == "ALARM_RAISED" and e["asset"] != asset_id:
+                continue
+            if e["code"] not in ("ACTION_APPROVED",) and e["asset"] not in related:
+                continue
+            if e["code"] in ("FAULT_ACTIVE", "FAULT_INJECTED") and e["params"].get("type") == "PUMP_TRIP":
+                kind = "trip"
+            key = (e["t_min"], e["code"], e["asset"])
+            if key not in seen:
+                seen.add(key)
+                out.append({"t": e["t_min"], "kind": kind, "label": e["text"]})
+        return out
+
+    def asset_history(self, asset_id: str, window_min: int) -> dict:
+        now = self.state.t_min
+        since = now - window_min
+        if asset_id in self.pump_history:
+            allrecs = list(self.pump_history[asset_id])
+            recs = [(i, r) for i, r in enumerate(allrecs) if r["t_min"] >= since]
+            pm = self.cfg.pump_model
+            series = {"t": [], "Q": [], "P": [], "w_est": [], "r_est": [], "flow": []}
+            expected = []
+            for i, r in recs:
+                d = diagnosis.diagnose(allrecs[:i + 1], self.cfg)
+                series["t"].append(r["t_min"]); series["Q"].append(r["Q"]); series["P"].append(r["P"])
+                series["w_est"].append(d["w_est"]); series["r_est"].append(d["r_est"]); series["flow"].append(r["flow"])
+                expected.append(round(pump_model.operating_point(1.0, r["s"], r["r"], pm)[0], 2))
+            return {"kind": "pump", "series": series, "events": self._asset_events(asset_id, since), "expected_flow": expected}
+        if asset_id in self.tank_history:
+            recs = [r for r in self.tank_history[asset_id] if r["t_min"] >= since]
+            series = {k: [r[k] if k != "t_min" else r[k] for r in recs] for k in ("t_min", "volume", "inflow", "outflow")}
+            series["t"] = series.pop("t_min")
+            return {"kind": "tank", "series": series, "events": self._asset_events(asset_id, since), "expected_flow": []}
+        raise KeyError(asset_id)
+
+    def asset_curves(self, asset_id: str, points: int = 40) -> dict:
+        if asset_id not in self.topo.pumps:
+            raise KeyError(asset_id)
+        info = self.topo.pumps[asset_id]
+        eff = faults.effective(self.state, self.topo, self.cfg)
+        pm, w, r = self.cfg.pump_model, eff.pump_w[asset_id], eff.pipeline_r[info.pipeline]
+        s = 1.0  # curves are drawn for the pump at speed even when it is a stopped standby
+        qs = [pm.Qmax * i / (points - 1) for i in range(points)]
+        pt = lambda f: [{"Q": round(q, 1), "H": round(max(f(q), 0.0), 2)} for q in qs]  # noqa: E731
+        q_op, h_op = pump_model.operating_point(w, s, r, pm)
+        q_h, h_h = pump_model.operating_point(1.0, s, 1.0, pm)
+        return {
+            "pump_curve": pt(lambda q: pump_model.pump_head(q, w, s, pm)),
+            "pump_curve_healthy": pt(lambda q: pump_model.pump_head(q, 1.0, s, pm)),
+            "system_curve": pt(lambda q: pump_model.system_head(q, r, pm)),
+            "system_curve_healthy": pt(lambda q: pump_model.system_head(q, 1.0, pm)),
+            "operating_point": {"Q": round(q_op, 2), "H": round(h_op, 2)},
+            "healthy_point": {"Q": round(q_h, 2), "H": round(h_h, 2)},
+            "running": self.state.pumps[asset_id].run_state == "RUNNING", "w": round(w, 4), "r": round(r, 3),
+        }
 
     def impact(self, asset_id: str) -> dict:
         if asset_id not in self.topo.nodes:
