@@ -37,6 +37,10 @@ class PumpState:
     start_ready_at_min: Optional[int] = None
     auto_started: bool = False
     low_flow_ticks: int = 0
+    hardware_online: bool = False
+    temperature_c: Optional[float] = None
+    knob_factor: Optional[float] = None
+    hardware_telemetry: Optional[dict] = None
 
 
 @dataclass(frozen=True)
