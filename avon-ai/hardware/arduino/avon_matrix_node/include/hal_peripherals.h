@@ -3,10 +3,14 @@
 #include "config.h"
 #include "model.h"
 
+// Official Arduino Modulino Qwiic library
+#include <Arduino_Modulino.h>
+
 struct PeripheralTelemetry {
-  uint16_t knob = 1000;      // 0..1000 (thousandths, 1000 = 100% health/throttle)
-  float temperature_c = 25.0f; // degrees Celsius
-  uint16_t light = 500;       // 0..1023 ambient reading
+  uint16_t knob = 1000;         // 0..1000 (thousandths, 1000 = 100% health/throttle)
+  float temperature_c = 25.0f;    // degrees Celsius
+  uint16_t light = 500;          // ambient reading
+  int16_t distance_mm = -1;      // Modulino Distance (-1 if not present)
   bool knobChanged = false;
   bool tempAlert = false;
 };
@@ -21,18 +25,31 @@ class HalPeripherals {
  private:
   PeripheralTelemetry telemetry;
 
-  // Smoothing filters & timers
-  float smoothedKnob = 1023.0f;
-  float smoothedTempAdc = 300.0f;
+  // Modulino Qwiic Modules
+  ModulinoKnob modulinoKnob;
+  ModulinoThermo modulinoThermo;
+  ModulinoBuzzer modulinoBuzzer;
+  ModulinoLight modulinoLight;
+  ModulinoDistance modulinoDistance;
+  ModulinoPixels modulinoPixels;
+
+  // Hardware presence flags detected on the Qwiic bus
+  bool hasModulinoKnob = false;
+  bool hasModulinoThermo = false;
+  bool hasModulinoBuzzer = false;
+  bool hasModulinoLight = false;
+  bool hasModulinoDistance = false;
+  bool hasModulinoPixels = false;
+
+  int lastKnobPos = 100;
   float simTemperature = 25.0f;
-  float smoothedLight = 500.0f;
 
   unsigned long lastSampleMs = 0;
   unsigned long lastTxMs = 0;
   unsigned long lastBuzzerToggleMs = 0;
-  bool buzzerState = false;
+  bool buzzerActive = false;
   PumpState lastPumpState = PUMP_STOPPED;
 
   void sampleSensors(PumpState pumpState);
-  void updateBuzzer(unsigned long now, PumpState pumpState);
+  void updateBuzzerAndLeds(unsigned long now, PumpState pumpState);
 };
