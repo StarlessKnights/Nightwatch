@@ -1,6 +1,8 @@
 # Arduino matrix nodes
 
-Three Arduino UNO R4 WiFi boards render AVON simulation state on their built-in red 12x8 matrices. This is display-only telemetry; the boards do not control process equipment.
+Three Arduino UNO R4 WiFi boards render dedicated pump status on their built-in red 12x8 matrices. This is display-only telemetry; the boards do not control process equipment.
+
+Assignments are fixed in firmware: Device 1 = P-201, Device 2 = P-203, Device 3 = P-204. The legacy PlatformIO environment names (`device_tank`, `device_pipeline`, and `device_treatment`) are retained for compatibility.
 
 ## PlatformIO
 
@@ -32,6 +34,6 @@ At boot each board prints `AVON|HELLO|...` with its compiled device ID. Gateway 
 
 ## Board placement
 
-Place device 1 (T-104 / pumps), device 2 (PL-1), and device 3 (TRT-1) left to right. Label each board and cable. The LED matrices are monochrome, so state is encoded by shape, motion, and blinking. Provide printed asset labels for the audience.
+Label each board and cable with its pump: P-201, P-203, and P-204. The LED matrices are monochrome, so state is encoded by shape, motion, and blinking. Provide printed asset labels for the audience.
 
 Physical acceptance requires access to the boards and a live Person A gateway. Record actual results in `tests/hardware_acceptance.md`; software-only checks do not count as hardware acceptance.

@@ -55,7 +55,7 @@ static void printApiTestFrame(){
 void setup(){
   pinMode(LED_BUILTIN,OUTPUT);digitalWrite(LED_BUILTIN,LOW);
   Serial.begin(SERIAL_BAUD);matrix.begin();matrix.clear();
-  const char *profile=DEVICE_ID==1?"tank":(DEVICE_ID==2?"pipeline":"treatment");
+  const char *profile="pump";
   Serial.print("AVON|HELLO|v=1|dev=");Serial.print(DEVICE_ID);Serial.print("|profile=");Serial.print(profile);Serial.print("|fw=");Serial.println(FIRMWARE_VERSION);
 }
 
@@ -83,8 +83,6 @@ void loop(){
   if((uint32_t)(now-lastFrame)>=300){lastFrame=now;fb.clear();static uint8_t corner=0;int xs[]={0,11,11,0},ys[]={0,0,7,7};fb.set(xs[corner],ys[corner]);corner=(corner+1)%4;matrix.loadPixels(&fb.pixels[0][0],96);}
 #else
   bool stale=!state.hasPacket||(uint32_t)(now-state.lastPacketMs)>=LINK_TIMEOUT_MS;
-  unsigned long interval=FRAME_INTERVAL_MS;
-  if(!stale&&DEVICE_ID!=1){uint16_t value=state.flow;interval=map(value,0,state.maxFlow,400,40);interval=constrain(interval,40,400);}
-  if((uint32_t)(now-lastFrame)>=interval){lastFrame=now;phase++;if(stale)diagnostic(now);else renderProfile(state,fb,now,phase);matrix.loadPixels(&fb.pixels[0][0],96);}
+  if((uint32_t)(now-lastFrame)>=FRAME_INTERVAL_MS){lastFrame=now;phase++;if(stale)diagnostic(now);else renderProfile(state,fb,now,phase);matrix.loadPixels(&fb.pixels[0][0],96);}
 #endif
 }

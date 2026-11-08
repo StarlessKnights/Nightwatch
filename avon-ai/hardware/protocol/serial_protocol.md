@@ -1,17 +1,32 @@
-# AVON Arduino serial protocol v1
+# AVON Arduino serial protocol v1 (pump nodes)
 
-USB CDC serial at 115200 baud, 8-N-1. Gateway sends complete newline-terminated JSON packets at 5-10 Hz and after state changes. Maximum payload is 192 bytes. An Arduino accepts only `v:1` packets addressed to its compiled `dev` and replaces its entire local display snapshot on each valid message. Stale telemetry is hidden after 1500 ms.
+USB CDC serial is 115200 baud, 8-N-1. Send one newline-terminated JSON packet at 5–10 Hz. Each UNO accepts only packets with `v:1`, its compiled `dev`, and its assigned pump name.
 
-## Device packets
+## Fixed Arduino assignments
 
-Device 1 requires `v,seq,dev,lvl,cap,h,hh,p1,p2,al,il`.
+| PlatformIO environment | `dev` | Pump | Display |
+|---|---:|---|---|
+| `device_tank` | 1 | P-201 | dedicated P-201 status |
+| `device_pipeline` | 2 | P-203 | dedicated P-203 status |
+| `device_treatment` | 3 | P-204 | dedicated P-204 status |
 
-Device 2 requires `v,seq,dev,flow,max,rf,dir,lim`; `al` is optional.
+The historical environment names are retained for PlatformIO compatibility; all three are now pump displays.
 
-Device 3 requires `v,seq,dev,flow,max,tf,bp`; `al` is optional.
+## Packet
 
-Pump codes: 0 stopped, 1 running, 2 starting, 3 degraded, 4 tripped, 5 unavailable. `rf` and `tf` are factors in thousandths. Alarm codes are 0 normal, 1 advisory, 2 high, 3 critical. Limiting codes: 0 none, 1 pipeline, 2 treatment, 3 tank volume. `dir` is -1 reverse display, 0 stopped, 1 forward.
+```json
+{"v":1,"seq":310,"dev":1,"pump":"P-201","state":1,"w":1000,"lvl":600,"cap":1000,"available":1}
+```
 
-The board emits `AVON|HELLO|v=1|dev=N|profile=...|fw=0.1.0` at startup. It does not emit operational commands. Invalid or oversized messages are ignored; parser errors briefly pulse the onboard LED. Wrong device/version packets are ignored.
+- `state`: `0` stopped, `1` running, `2` starting, `3` degraded, `4` tripped, `5` unavailable.
+- `w`: effective pump health/wear score in thousandths (`1000` = 100%, `500` = 50%). Strictly below `500` activates caution.
+- `lvl` / `cap`: associated tank level and capacity. Normal operation renders animated waves filled from the bottom to this percentage.
+- `available`: `0` means unavailable. Unavailable has priority over all other visual states.
 
-The gateway maps existing `/ws/sim` fields as described in `PERSON_B_IMPLEMENTATION_PLAN.md`. It should map missing/unknown limiting causes to 0 and pump run states explicitly. For `bp`, send 1 when TRT intake is constrained or an associated pump is limited by treatment.
+## Visual priority
+
+1. Unavailable (`available:0` or `state:5`): solid X.
+2. Tripped (`state:4`) or `w < 500`: alternate between the live water waves and a caution triangle with exclamation mark.
+3. Otherwise: live animated water waves at the reported level.
+
+The board emits `AVON|HELLO|v=1|dev=N|profile=pump|fw=0.2.0-pump` at startup. Wrong pump names, device IDs, versions, malformed, or oversized packets are ignored; parser errors pulse the onboard LED. Telemetry goes stale after 1500 ms.

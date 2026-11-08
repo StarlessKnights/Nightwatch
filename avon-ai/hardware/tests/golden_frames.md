@@ -6,24 +6,11 @@ Coordinate diagrams use `#` for lit red LED and `.` for off. Rows are top to bot
 
 The `corners` PlatformIO environment must light these positions in order: `(0,0)`, `(11,0)`, `(11,7)`, `(0,7)`. If the physical matrix differs, adjust the single mapping in `Framebuffer::pack()` and rerun this check.
 
-## Device 1
+All three devices use the same pump renderer with the assignment compiled into the environment.
 
-- Empty tank: visible side rails and bottom edge; no fill pixels.
-- Half tank: four bottom rows filled between columns 1 and 2.
-- H alarm: top tank row blinks at 2 Hz.
-- HH/interlock: tank region alternates with an exclamation pattern; inlet bar appears on row 1.
-- Pump states: stopped dash, running rotating vane, starting pulse, degraded stutter, trip X, unavailable boxed X.
-
-## Device 2
-
-- Zero flow: steady rails on rows 2 and 5, no particles.
-- Positive flow: particles in rows 3 and 4 travel left to right; higher rate advances faster.
-- Pipeline restriction: flashing neck at columns 5 and 6.
-- Treatment limit: right barrier at columns 10 and 11.
-- Tank-volume limit: inlet marker at column 0.
-
-## Device 3
-
-- Normal: incoming particles feed a changing vortex/drain motif at right.
-- Backpressure: right-side flashing barrier and left-moving particles.
-- Critical constrained state: occasional full-width alarm stripe.
+- Device 1 is dedicated to P-201.
+- Device 2 is dedicated to P-203.
+- Device 3 is dedicated to P-204.
+- Normal states: animated water waves filled from the bottom to `lvl / cap`, with a moving crest and occasional droplets.
+- Tripped (`state:4`) or effective health `w < 500`: alternate between the live level waves and a caution triangle with an exclamation mark. The exclamation has a dark gap on its third pixel.
+- Unavailable (`available:0` or `state:5`): solid simple X, with priority over caution.
