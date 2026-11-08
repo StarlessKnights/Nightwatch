@@ -392,5 +392,58 @@ class GatewayTests(unittest.TestCase):
         self.assertFalse(handled)
 
 
+    def test_datacenter_cooling_sim_outage_to_hardware_packets(self):
+        extractor = PumpStateExtractor({})
+        state = {
+            "pumps": {
+                "CHP-1": {"run_state": "RUNNING", "eff_health": 1.0, "available": True},
+                "CHP-2": {"run_state": "STOPPED", "eff_health": 1.0, "available": True},
+            },
+            "tanks": {
+                "HALL-A": {"volume": 600, "capacity": 1000}
+            },
+            "faults": []
+        }
+
+        # 1. Normal state: Device 1 & 2 run fluid waves, Device 3 is idle/standby
+        p1 = extractor.extract_pump(1, "P-201", state)
+        self.assertEqual(p1["v"], 1)
+        self.assertEqual(p1["dev"], 1)
+        self.assertEqual(p1["pump"], "P-201")
+        self.assertEqual(p1["state"], 1)
+        self.assertEqual(p1["available"], 1)
+        self.assertEqual(p1["lvl"], 600)
+        self.assertEqual(p1["cap"], 1000)
+
+        p2 = extractor.extract_pump(2, "P-203", state)
+        self.assertEqual(p2["dev"], 2)
+        self.assertEqual(p2["pump"], "P-203")
+        self.assertEqual(p2["state"], 1)
+
+        p3 = extractor.extract_pump(3, "P-204", state)
+        self.assertEqual(p3["dev"], 3)
+        self.assertEqual(p3["pump"], "P-204")
+        self.assertEqual(p3["state"], 0)
+
+        # 2. Sim outage: Trip on CHP-1 triggers state 4 (caution triangle)
+        state["pumps"]["CHP-1"]["run_state"] = "TRIPPED"
+        state["faults"] = [{"type": "PUMP_TRIP", "target": "CHP-1", "active": True}]
+        p1_tripped = extractor.extract_pump(1, "P-201", state)
+        p2_tripped = extractor.extract_pump(2, "P-203", state)
+        self.assertEqual(p1_tripped["state"], 4)
+        self.assertEqual(p2_tripped["state"], 4)
+
+        # Standby CHP-2 starts on changeover -> Device 3 immediately shows water waves
+        state["pumps"]["CHP-2"]["run_state"] = "RUNNING"
+        p3_running = extractor.extract_pump(3, "P-204", state)
+        self.assertEqual(p3_running["state"], 1)
+
+        # 3. Sim outage: Unavailable on CHP-1 triggers state 5 (solid X)
+        state["pumps"]["CHP-1"]["available"] = False
+        p1_unavail = extractor.extract_pump(1, "P-201", state)
+        self.assertEqual(p1_unavail["state"], 5)
+        self.assertEqual(p1_unavail["available"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

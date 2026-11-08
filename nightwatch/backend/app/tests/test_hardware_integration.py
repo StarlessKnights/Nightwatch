@@ -176,3 +176,36 @@ def test_thermal_hysteresis_boundaries():
     session.update_hardware_node(dev_id=2, pump_id="CHP-1", online=True, temperature_c=65.0)
     assert not any("Thermal overheat" in str(f.params.get("reason", "")) for f in session.state.faults)
 
+
+
+def test_bidirectional_hardware_outage_coupling():
+    # 1. Device 2 connects to duty pump CHP-1
+    session.update_hardware_node(dev_id=2, pump_id="CHP-1", online=True)
+    assert session.state.pumps["CHP-1"].run_state == RUNNING
+    assert session.state.pumps["CHP-1"].available is True
+    assert session.state.pumps["CHP-2"].run_state == STOPPED
+
+    # 2. Hardware disconnect causes an active outage fault in the simulation
+    session.update_hardware_node(dev_id=2, pump_id="CHP-1", online=False)
+    dc_faults = [
+        f for f in session.state.faults
+        if f.target == "CHP-1" and "Hardware disconnected" in str(f.params.get("reason", ""))
+    ]
+    assert len(dc_faults) == 1
+    assert dc_faults[0].type == "PUMP_UNAVAILABLE"
+    assert session.state.pumps["CHP-1"].available is False
+    assert session.state.pumps["CHP-1"].run_state == STOPPED
+
+    # Standby pump CHP-2 immediately triggers changeover to mitigate outage
+    assert session.state.pumps["CHP-2"].run_state in (STARTING, RUNNING)
+    assert session.state.pumps["CHP-2"].auto_started is True
+
+    # 3. Hardware reconnect clears the outage fault and restores duty pump
+    session.update_hardware_node(dev_id=2, pump_id="CHP-1", online=True)
+    dc_faults_after = [
+        f for f in session.state.faults
+        if f.target == "CHP-1" and "Hardware disconnected" in str(f.params.get("reason", ""))
+    ]
+    assert len(dc_faults_after) == 0
+    assert session.state.pumps["CHP-1"].available is True
+    assert session.state.pumps["CHP-1"].run_state in (STARTING, RUNNING)

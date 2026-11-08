@@ -14,7 +14,7 @@ FAULT_CATALOG = {
     "PUMP_DEGRADE": {"target_kind": "pump", "handled_by": "NIGHTWATCH (not auto-handled)",
                      "params": {"w": {"min": 0.1, "max": 0.95, "step": 0.05, "default": 0.299},
                                 "ramp_min": {"min": 0, "max": 60, "step": 5, "default": 0}}},
-    "PUMP_UNAVAILABLE": {"target_kind": "pump", "params": {}, "handled_by": "Excluded from actions and auto-start"},
+    "PUMP_UNAVAILABLE": {"target_kind": "pump", "params": {"reason": {"default": None, "type": "str"}}, "handled_by": "Excluded from actions and auto-start"},
     "PIPELINE_RESTRICTION": {"target_kind": "pipeline", "handled_by": "NIGHTWATCH",
                              "params": {"r": {"min": 1.5, "max": 12, "step": 0.5, "default": 9.9}}},
     "TREATMENT_CONSTRAINT": {"target_kind": "treatment", "handled_by": "NIGHTWATCH",

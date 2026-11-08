@@ -287,13 +287,36 @@ class Session:
                 changes.append("run_state=STOPPED")
             if old_online:
                 self.log(Event(self.state.t_min, "HARDWARE", "HARDWARE_DISCONNECTED", pump_id, {"dev": dev_id}))
+
+            # Outage coupling: Arduino disconnect causes an active outage fault in the simulation
+            has_dc_fault = any(
+                f.type in ("PUMP_UNAVAILABLE", "PUMP_TRIP") and f.target == pump_id and "Hardware disconnected" in str(f.params.get("reason", ""))
+                for f in self.state.faults
+            )
+            if not has_dc_fault:
+                try:
+                    self.inject_fault("PUMP_UNAVAILABLE", pump_id, {"reason": f"Hardware disconnected (Device {dev_id})"}, None)
+                except Exception:
+                    pass
         else:
             # Arduino connected: restore availability (hardware online)
             ps = replace(ps, hardware_online=True, available=True)
             changes.append("available=True")
+
+            # Outage coupling: Clear hardware disconnect outage fault on reconnect
+            dc_faults = [
+                f for f in self.state.faults
+                if f.target == pump_id and "Hardware disconnected" in str(f.params.get("reason", ""))
+            ]
+            for df in dc_faults:
+                try:
+                    self.clear_fault(df.id)
+                except Exception:
+                    pass
+
             # Never automatically turn on backup/standby pumps!
             # Only duty pumps activate when connected
-            if ps.role != "standby" and ps.run_state in ("STOPPED", "STARTING"):
+            if ps.role != "standby" and ps.run_state in ("STOPPED", "STARTING", "TRIPPED"):
                 ps = replace(ps, run_state="RUNNING", start_ready_at_min=None)
                 changes.append("run_state=RUNNING")
             if not old_online:

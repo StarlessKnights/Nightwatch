@@ -629,31 +629,76 @@ class PumpStateExtractor:
 
     def _get_tank_level_cap(self, pump_id: str, state: dict) -> tuple[int, int]:
         tanks = state.get("tanks", {})
-        tank_id = "T-101" if pump_id == "P-201" else "T-104"
-        t_data = tanks.get(tank_id, {})
-        lvl = int(round(t_data.get("volume", 600)))
-        cap = int(round(t_data.get("capacity", 1000)))
+        # Datacenter cooling tank HALL-A / HALL-B or legacy T-101 / T-104
+        t_data = (
+            tanks.get("HALL-A")
+            or tanks.get("HALL-B")
+            or tanks.get("T-101")
+            or tanks.get("T-104")
+            or {}
+        )
+        lvl = int(round(t_data.get("volume", t_data.get("lvl", t_data.get("level", 600)))))
+        cap = int(round(t_data.get("capacity", t_data.get("cap", 1000))))
         return max(0, lvl), max(1, cap)
 
     def extract_pump(self, dev_id: int, pump_id: str, state: dict) -> dict:
-        """Extracts telemetry packet for an outflow pump (P-201, P-203, P-204) in v1 format."""
+        """Extracts telemetry packet for physical Arduino UNO R4 pump firmware in v1 format."""
         pumps = state.get("pumps", {})
-        p = pumps.get(pump_id, {})
 
-        w_float = p.get("eff_health", p.get("health", p.get("capacity_factor", 1.0)))
-        w_int = int(round(max(0.0, min(1.0, w_float)) * 1000))
+        # Resolve pump in simulation state (maps P-201/P-203 -> CHP-1, P-204 -> CHP-2, P-202 -> CHP-3)
+        alias_to_sim = {
+            "P-201": "CHP-1",
+            "P-203": "CHP-1",
+            "P-204": "CHP-2",
+            "P-202": "CHP-3",
+        }
+        sim_id = alias_to_sim.get(pump_id, pump_id)
+        p = pumps.get(sim_id) or pumps.get(pump_id) or {}
 
-        st_code = self._pump_code(p, w_int)
-        if any(f.get("type") == "PUMP_TRIP" and f.get("target") == pump_id and f.get("active", True) for f in state.get("faults", [])) and st_code != 5:
-            st_code = 4
+        w_float = p.get("eff_health", p.get("health", p.get("capacity_factor", p.get("knob_factor", 1.0))))
+        if isinstance(w_float, (int, float)) and w_float > 1.0:
+            w_int = int(round(w_float))
+        else:
+            w_int = int(round(max(0.0, min(1.0, float(w_float))) * 1000))
+        w_int = max(0, min(1000, w_int))
+
+        # Check active faults in simulation
+        faults_list = state.get("faults", [])
+        has_trip_fault = any(
+            (f.get("type") == "PUMP_TRIP" and f.get("target") in (sim_id, pump_id) and f.get("active", True))
+            for f in faults_list if isinstance(f, dict)
+        )
+        has_unavail_fault = any(
+            (f.get("type") == "PUMP_UNAVAILABLE" and f.get("target") in (sim_id, pump_id) and f.get("active", True))
+            for f in faults_list if isinstance(f, dict)
+        )
+
+        is_available = p.get("available", True) and not has_unavail_fault
+        run_st = str(p.get("run_state", "STOPPED")).upper()
+
+        if not is_available:
+            st_code = 5  # PUMP_UNAVAILABLE -> firmware renders solid X
+        elif has_trip_fault or run_st == "TRIPPED":
+            st_code = 4  # PUMP_TRIPPED -> firmware renders caution triangle
+        elif run_st in ("RUNNING", "STARTING"):
+            st_code = 3 if w_int < 500 else (2 if run_st == "STARTING" else 1)
+        elif run_st == "DEGRADED":
+            st_code = 3
+        else:
+            st_code = 0  # PUMP_STOPPED -> firmware renders dark / idle
+
         lvl, cap = self._get_tank_level_cap(pump_id, state)
-        available = 1 if (p.get("available", True) and st_code != 5) else 0
+        available = 1 if (is_available and st_code != 5) else 0
+
+        # Physical Arduino Uno R4 firmware self-filters by DEVICE_ID and ASSIGNED_PUMP:
+        # Dev 1: "P-201", Dev 2: "P-203", Dev 3: "P-204"
+        fw_pump = {1: "P-201", 2: "P-203", 3: "P-204"}.get(dev_id, pump_id)
 
         return {
             "v": 1,
             "seq": self._next_seq(),
             "dev": dev_id,
-            "pump": pump_id,
+            "pump": fw_pump,
             "state": st_code,
             "w": w_int,
             "available": available,
@@ -855,7 +900,11 @@ async def handle_upstream_packet(
             dev_id = dev if dev is not None else 2
             target_dev = pkt.get("target_dev", dev_id)
             target_pump = pkt.get("target_pump") or pkt.get("pump")
-            if not target_pump:
+            if target_pump in ("P-201", "P-203"):
+                target_pump = "CHP-1"
+            elif target_pump == "P-204":
+                target_pump = "CHP-2"
+            elif not target_pump:
                 pumps_in_state = current_state.get("pumps", {})
                 if "CHP-1" in pumps_in_state:
                     target_pump = "CHP-1"
@@ -993,51 +1042,47 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
                 bus.scan_for_new_ports()
                 last_scan = now
 
-            proto_version = cfg.get("protocol_version", 2)
-            if proto_version == 2:
-                # Node 1: Tank (HALL-A / T-104 / T-101)
-                if 1 in active_devs:
-                    p1 = extractor.extract_tank(1, current_state)
-                    last_packets[1] = p1
-                    bus.broadcast_packet(p1)
-                # Node 2: Duty Pump (CHP-1 / P-203 / P-201)
-                if 2 in active_devs:
-                    p2 = extractor.extract_duty_pump(2, current_state)
-                    last_packets[2] = p2
-                    bus.broadcast_packet(p2)
-                # Node 3: Output Stream & Security Killswitch
-                if 3 in active_devs:
-                    p3 = extractor.extract_output(3, current_state)
-                    last_packets[3] = p3
-                    bus.broadcast_packet(p3)
-            else:
-                # Legacy v1
-                if 1 in active_devs:
-                    p1 = extractor.extract_pump(1, "P-201", current_state)
-                    last_packets[1] = p1
-                    bus.broadcast_packet(p1)
-                if 2 in active_devs:
-                    p2 = extractor.extract_pump(2, "P-203", current_state)
-                    last_packets[2] = p2
-                    bus.broadcast_packet(p2)
-                if 3 in active_devs:
-                    p3 = extractor.extract_pump(3, "P-204", current_state)
-                    last_packets[3] = p3
-                    bus.broadcast_packet(p3)
+            # Broadcast continuous telemetry matching physical Arduino firmware contract
+            # Node 1: Duty Pump 1 (P-201 / CHP-1) -> active water waves animation
+            if 1 in active_devs:
+                p1 = extractor.extract_pump(1, "P-201", current_state)
+                last_packets[1] = p1
+                bus.broadcast_packet(p1)
+
+            # Node 2: Duty Pump 2 / Control Node (P-203 / CHP-1) -> active water waves & knob telemetry
+            if 2 in active_devs:
+                p2 = extractor.extract_pump(2, "P-203", current_state)
+                last_packets[2] = p2
+                bus.broadcast_packet(p2)
+
+            # Node 3: Standby Pump (P-204 / CHP-2) -> standby (dark while stopped, waves on changeover)
+            if 3 in active_devs:
+                p3 = extractor.extract_pump(3, "P-204", current_state)
+                last_packets[3] = p3
+                bus.broadcast_packet(p3)
+
+            # Also broadcast any specific v2 nodes if non-pump profile detected
+            has_tank = any(getattr(link, "profile", None) == "tank" for link in bus.links.values())
+            has_output = any(getattr(link, "profile", None) == "output" for link in bus.links.values())
+            if has_tank:
+                bus.broadcast_packet(extractor.extract_tank(1, current_state))
+            if has_output:
+                bus.broadcast_packet(extractor.extract_output(3, current_state))
 
             # Log status ticker every 2 seconds
             if now - last_log >= 2.0:
                 health = bus.get_health_summary()
                 pumps = current_state.get("pumps", {})
                 chp1 = pumps.get("CHP-1", pumps.get("P-203", {}))
+                chp2 = pumps.get("CHP-2", pumps.get("P-204", {}))
                 tanks = current_state.get("tanks", {})
                 tank_a = tanks.get("HALL-A", tanks.get("T-104", {}))
                 lvl_val = tank_a.get("volume", 0)
                 logger.info(
                     f"Tick t={current_state.get('t_min', 0)}m | "
-                    f"Tank(D1): {lvl_val:.0f} bbl | "
-                    f"Pump(D2): {chp1.get('flow', 0):.0f} bbl/hr ({chp1.get('run_state', 'STOPPED')}) | "
-                    f"Output(D3): airgap={extractor.local_airgap} | "
+                    f"Tank(HALL-A): {lvl_val:.0f} bbl | "
+                    f"CHP-1(D1/D2): {chp1.get('flow', 0):.0f} bbl/hr ({chp1.get('run_state', 'STOPPED')}) | "
+                    f"CHP-2(D3): {chp2.get('flow', 0):.0f} bbl/hr ({chp2.get('run_state', 'STOPPED')}) | "
                     f"Links: [{health}]"
                 )
                 last_log = now
