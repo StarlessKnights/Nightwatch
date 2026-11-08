@@ -366,3 +366,150 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   from { stroke-dashoffset: 24; }
   to { stroke-dashoffset: 0; }
 }
+
+/* ==================== Pump / Fan Operator Control Deck ==================== */
+
+.pump-controls-card {
+  margin: 12px 0 16px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.control-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.control-btn-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.btn-ctrl {
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.btn-ctrl:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-ctrl.btn-trip {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #fca5a5;
+}
+.btn-ctrl.btn-trip:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.35);
+}
+
+.btn-ctrl.btn-reset {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: #22c55e;
+  color: #86efac;
+}
+.btn-ctrl.btn-reset:hover:not(:disabled) {
+  background: rgba(34, 197, 94, 0.35);
+}
+
+.btn-ctrl.btn-unavail {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: #f59e0b;
+  color: #fcd34d;
+}
+.btn-ctrl.btn-unavail:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.35);
+}
+
+.btn-ctrl.btn-avail {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: #38bdf8;
+  color: #bae6fd;
+}
+.btn-ctrl.btn-avail:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.35);
+}
+
+.btn-ctrl.btn-stop {
+  background: rgba(148, 163, 184, 0.15);
+  border-color: #64748b;
+  color: #cbd5e1;
+}
+.btn-ctrl.btn-stop:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.3);
+}
+
+.btn-ctrl.btn-start {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: #10b981;
+  color: #a7f3d0;
+}
+.btn-ctrl.btn-start:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.3);
+}
+
+.wear-slider-group {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.wear-slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+.wear-slider-input {
+  width: 100%;
+  accent-color: #38bdf8;
+  cursor: pointer;
+  margin: 6px 0;
+}
+
+.wear-presets {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.preset-chip {
+  flex: 1;
+  padding: 5px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  border-radius: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.preset-chip:hover {
+  background: var(--border);
+  color: #38bdf8;
+}

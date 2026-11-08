@@ -42,6 +42,7 @@ export function PumpDetailPanel({ id, env, network, onClose }: { id: string; env
   const [tab, setTab] = useState<'overview' | 'curves'>('overview')
   const [hist, setHist] = useState<AssetHistory | null>(null)
   const [curves, setCurves] = useState<Curves | null>(null)
+  const [isUpdating, setIsUpdating] = useState(false)
   const pump = env.state.pumps[id]
   const tick = Math.floor(env.state.t_min / REFRESH_EVERY_MIN)
   const nFaults = env.state.faults.length
@@ -54,28 +55,153 @@ export function PumpDetailPanel({ id, env, network, onClose }: { id: string; env
     return () => { live = false }
   }, [id, tick, nFaults, windowMin, env.scenario.id])
 
+  if (!pump) return null
+
   const d = pump.diagnosis
   const data = hist ? hist.series.t.map((t, i) => ({
     t: t as number, Q: hist.series.Q[i], expected: hist.expected_flow[i], P: hist.series.P[i],
   })) : []
+
+  // Check active trip fault
+  const activeTripFault = env.state.faults.find(f => f.target === id && f.type === 'PUMP_TRIP')
+  const isTripped = pump.run_state === 'TRIPPED' || activeTripFault != null
+  const currentHealth = pump.health ?? 1.0
+
+  const handleToggleTrip = async () => {
+    setIsUpdating(true)
+    try {
+      if (isTripped) {
+        // Clear all active trip faults for this asset
+        const tripFaults = env.state.faults.filter(f => f.target === id && f.type === 'PUMP_TRIP')
+        for (const f of tripFaults) {
+          await api.clearFault(f.id)
+        }
+        await api.patchAsset(id, { run_state: pump.role === 'duty' ? 'RUNNING' : 'STOPPED' })
+      } else {
+        await api.injectFault('PUMP_TRIP', id, { reason: 'Operator manual trip' })
+      }
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  const handleToggleAvailability = async () => {
+    setIsUpdating(true)
+    try {
+      await api.patchAsset(id, { available: !pump.available })
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  const handleWearChange = async (newHealth: number) => {
+    const val = Math.max(0.05, Math.min(1.0, newHealth))
+    setIsUpdating(true)
+    try {
+      await api.patchAsset(id, { health: val })
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  const handleToggleRun = async () => {
+    if (!pump.available || isTripped) return
+    setIsUpdating(true)
+    try {
+      const nextState = pump.run_state === 'RUNNING' ? 'STOPPED' : 'RUNNING'
+      await api.patchAsset(id, { run_state: nextState })
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
   return (
     <div className="panel-fill scroll detail">
       <div className="panel-head">
-        <h3>{id} detail</h3>
+        <h3>{id} Control & Telemetry</h3>
         <span className="chip">SIM</span>
-        <span className={`chip ${pump.run_state === 'TRIPPED' ? 'crit' : ''}`}>{pump.available ? pump.run_state : 'UNAVAILABLE'}</span>
+        <span className={`chip ${isTripped ? 'crit' : !pump.available ? 'warn' : 'ok'}`}>
+          {!pump.available ? 'UNAVAILABLE' : isTripped ? 'TRIPPED' : pump.run_state}
+        </span>
         <div className="spacer" />
         <button onClick={onClose}>✕ Close</button>
       </div>
+
+      {/* Operator Supervisory Control Deck */}
+      <div className="pump-controls-card">
+        <div className="control-section-title">
+          <span>⚙ OPERATOR SUPERVISORY OVERRIDES (LIVE SIM)</span>
+          {isUpdating && <small className="hint" style={{ color: '#38bdf8' }}>Syncing...</small>}
+        </div>
+
+        {/* Action Buttons: Trip, Availability, Run/Stop */}
+        <div className="control-btn-grid">
+          <button
+            className={`btn-ctrl ${isTripped ? 'btn-reset' : 'btn-trip'}`}
+            onClick={handleToggleTrip}
+            title={isTripped ? 'Clear trip fault and reset interlock' : 'Inject trip fault immediately'}
+          >
+            {isTripped ? '✓ RESET TRIP' : '⚡ TRIP FAN/PUMP'}
+          </button>
+
+          <button
+            className={`btn-ctrl ${pump.available ? 'btn-unavail' : 'btn-avail'}`}
+            onClick={handleToggleAvailability}
+            title={pump.available ? 'Isolate asset and mark unavailable' : 'Restore asset availability'}
+          >
+            {pump.available ? '⛔ LOCKOUT (UNAVAILABLE)' : '✓ RESTORE AVAILABLE'}
+          </button>
+
+          <button
+            className={`btn-ctrl ${pump.run_state === 'RUNNING' ? 'btn-stop' : 'btn-start'}`}
+            onClick={handleToggleRun}
+            disabled={!pump.available || isTripped}
+            title={pump.run_state === 'RUNNING' ? 'Stop equipment' : 'Start equipment'}
+          >
+            {pump.run_state === 'RUNNING' ? '⏹ STOP EQUIPMENT' : '▶ START EQUIPMENT'}
+          </button>
+        </div>
+
+        {/* Wear / Health Slider */}
+        <div className="wear-slider-group">
+          <div className="wear-slider-header">
+            <span>IMPELLER WEAR / HEALTH:</span>
+            <b style={{ color: currentHealth > 0.7 ? '#22c55e' : currentHealth > 0.4 ? '#f59e0b' : '#ef4444' }}>
+              {(currentHealth * 100).toFixed(0)}% HEALTH {currentHealth <= 0.4 ? '(DEGRADED)' : ''}
+            </b>
+          </div>
+          <input
+            type="range"
+            min="0.10"
+            max="1.0"
+            step="0.05"
+            value={currentHealth}
+            onChange={(e) => handleWearChange(parseFloat(e.target.value))}
+            className="wear-slider-input"
+            title="Slide to dynamically inject wear / change impeller health"
+          />
+          <div className="wear-presets">
+            <button className="preset-chip" onClick={() => handleWearChange(1.0)}>100% (Nominal)</button>
+            <button className="preset-chip" onClick={() => handleWearChange(0.70)}>70% (Mild Wear)</button>
+            <button className="preset-chip" onClick={() => handleWearChange(0.40)}>40% (Heavy Wear)</button>
+            <button className="preset-chip" onClick={() => handleWearChange(0.15)}>15% (Critical)</button>
+          </div>
+        </div>
+      </div>
+
       <div className="seg">
         <button className={tab === 'overview' ? 'on' : ''} onClick={() => setTab('overview')}>Overview</button>
         <button className={tab === 'curves' ? 'on' : ''} onClick={() => setTab('curves')}>Curves</button>
       </div>
+
       {tab === 'overview' && (
         <>
           <div className="diag">
             <div><b>{d?.text ?? '…'}</b></div>
-            <div className="hint">w_est {d?.w_est?.toFixed(2) ?? '—'} · r_est {d?.r_est?.toFixed(2) ?? '—'} · flow {pump.Q.toFixed(0)} kW · P {pump.P.toFixed(1)}</div>
+            <div className="hint">
+              w_est {d?.w_est?.toFixed(2) ?? '—'} · r_est {d?.r_est?.toFixed(2) ?? '—'} · flow {pump.Q.toFixed(0)} kW · P {pump.P.toFixed(1)}
+              {pump.hardware_online ? ' · ⚡ Physical Hardware Connected' : ''}
+            </div>
           </div>
           {hist && data.length > 0 ? (
             <TimeSeriesStack data={data} events={hist.events} startClock={network.config.ui.start_clock} height={150}

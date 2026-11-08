@@ -244,7 +244,12 @@ function PumpNode({ data }: NodeProps<Node<D>>) {
   return (
     <div className={`nd pump-wrap ${data.dim ? 'dim' : ''}`}>
       <H />
-      <div className="pump-node-box">
+      <div
+        className="pump-node-box"
+        onClick={() => data.onDetails?.(data.node.id)}
+        style={{ cursor: 'pointer' }}
+        title="Click to view telemetry & control trip, wear, and availability"
+      >
         <div className="node-sprite-row">
           <ChillerPumpSprite isRunning={isRunning} isTripped={isTripped} />
           <div className="node-header-text">
@@ -252,9 +257,9 @@ function PumpNode({ data }: NodeProps<Node<D>>) {
             <div className="asset-purpose">CENTRIFUGAL PUMP</div>
           </div>
         </div>
-        <div className={`pump ${cls}`} title={`${p.run_state}${p.limited_by ? ` (limited by ${p.limited_by})` : ''} · double-click for detail`}>
+        <div className={`pump ${cls}`} title={`${p.run_state}${p.limited_by ? ` (limited by ${p.limited_by})` : ''} · click for controls`}>
           {data.node.id.replace('CHP-', 'CH')}
-          <button className="info nodrag" title="Pump detail" aria-label={`View ${data.node.id} details`} onClick={(e) => { e.stopPropagation(); data.onDetails?.(data.node.id) }}>ⓘ</button>
+          <button className="info nodrag" title="Fan / Pump Controls" aria-label={`Control ${data.node.id}`} onClick={(e) => { e.stopPropagation(); data.onDetails?.(data.node.id) }}>⚙</button>
         </div>
         <div className="sub">{!p.available ? 'UNAVAILABLE' : p.run_state === 'STOPPED' && p.role === 'standby' ? 'STANDBY' : p.run_state}</div>
         {d?.w_est != null && (

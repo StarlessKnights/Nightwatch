@@ -25,6 +25,7 @@ export const api = {
   approve: (optionId: string, runId: string) => call('POST', `/api/recommendation/${encodeURIComponent(optionId)}/approve?run_id=${encodeURIComponent(runId)}`),
   ack: (id: string) => call('POST', `/api/alarms/${encodeURIComponent(id)}/ack`),
   patchConfig: (patch: Json) => call('PATCH', '/api/config', patch),
+  patchAsset: (id: string, patch: { available?: boolean; health?: number; run_state?: string }) => call('PATCH', `/api/assets/${encodeURIComponent(id)}`, patch),
   assetHistory: (id: string, windowMin: number) => call<AssetHistory>('GET', `/api/assets/${id}/history?window_min=${windowMin}`),
   assetCurves: (id: string) => call<Curves>('GET', `/api/assets/${id}/curves`),
   assetDiagnosis: (id: string) => call<PumpDiagnosis>('GET', `/api/assets/${id}/diagnosis`),
