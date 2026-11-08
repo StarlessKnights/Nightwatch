@@ -25,7 +25,7 @@ export default function App() {
   if (!network || !env) return <div className="loading">{error ?? 'Connecting to AVON AI backend…'}</div>
   const disclaimer: string = network.config.ui.disclaimer
   const incidentAssets = focus?.run === env.state.run_id ? focus.assets
-    : intelligence.data?.incidents.filter((i) => i.status === 'active').flatMap((i) => i.affected_assets) ?? []
+    : intelligence.data?.incidents?.filter((i) => i?.status === 'active').flatMap((i) => i?.affected_assets ?? []) ?? []
   const sel = rec?.options.find((o) => o.action_id === (selectedId ?? rec.best_option_id)) ?? null
 
   return (

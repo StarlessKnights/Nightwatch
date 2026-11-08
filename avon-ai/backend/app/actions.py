@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from . import flow
+from . import flow, faults
 from .faults import Effective
 from .models import Config
 from .network import Topology
@@ -123,6 +123,10 @@ def preconditions(a: Action, state: SimState, eff: Effective, topo: Topology, cf
         p = a.params["pump"]
         if not eff.pump_available[p]:
             return ["ASSET_UNAVAILABLE"]
+        if p in eff.pump_trip:
+            return ["ASSET_TRIPPED"]
+        if eff.pump_w[p] < 0.5:
+            return ["ASSET_DEGRADED"]
         if state.pumps[p].run_state != STOPPED:
             return ["PRECONDITION_FAILED"]
         # Would starting it actually move more water, or is the path already the limit?
@@ -205,7 +209,8 @@ def apply_effect(state: SimState, pa: PendingAction, topo: Topology, cfg: Config
     if pa.kind == START_STANDBY_PUMP:
         p = pa.params["pump"]
         ps = state.pumps[p]
-        if ps.run_state != STOPPED or not ps.available:
+        eff = faults.effective(state, topo, cfg)
+        if ps.run_state != STOPPED or not eff.pump_available[p] or p in eff.pump_trip or eff.pump_w[p] < 0.5:
             return state, [ev("ACTION_SKIPPED", label=a.label, why="pump not startable", asset=p)]
         d = cfg.control.standby_start_delay_min
         pumps = dict(state.pumps)

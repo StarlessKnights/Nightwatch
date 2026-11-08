@@ -32,7 +32,8 @@ def control_pass(state: SimState, eff: Effective, topo: Topology, cfg: Config) -
 
         for sb in topo.standbys_of.get(duty_id, ()):
             sps = pumps[sb]
-            if reason and not ll and sps.run_state == STOPPED and eff.pump_available[sb]:
+            standby_healthy = eff.pump_available[sb] and sb not in eff.pump_trip and eff.pump_w[sb] >= 0.5
+            if reason and not ll and sps.run_state == STOPPED and standby_healthy:
                 pumps[sb] = replace(sps, run_state=STARTING, start_ready_at_min=t + c.standby_start_delay_min, auto_started=True)
                 events.append(Event(t, AUTO, "STANDBY_AUTOSTART", sb, {"duty": duty_id, "reason": reason, "delay_min": c.standby_start_delay_min}))
             elif c.auto_stop_standby and sps.auto_started and sps.run_state in (RUNNING, STARTING) and healthy:

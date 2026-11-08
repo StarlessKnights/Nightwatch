@@ -45,6 +45,22 @@ try:
     import serial.tools.list_ports
     HAS_SERIAL = True
 except ImportError:
+    class _MissingListPorts:
+        @staticmethod
+        def comports() -> list:
+            return []
+
+    class _MissingSerialTools:
+        list_ports = _MissingListPorts()
+
+    class _MissingSerial:
+        tools = _MissingSerialTools()
+
+        class Serial:  # pragma: no cover - only used when dependency is absent
+            def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+                raise RuntimeError("pyserial is required for hardware serial access")
+
+    serial = _MissingSerial()
     HAS_SERIAL = False
 
 try:
@@ -268,7 +284,10 @@ class FaultTolerantSerialBus:
 
     def read_upstream_telemetry(self) -> List[dict]:
         """Reads incoming NDJSON telemetry lines from all connected microcontrollers."""
-        if self.dry_run or not HAS_SERIAL:
+        # Unit tests and lab harnesses may attach a fake serial link even when
+        # pyserial is unavailable in the host interpreter. Preserve that path
+        # while keeping a true dry-run with no links side-effect free.
+        if not any(link.is_online and link.ser for link in self.links.values()):
             return []
 
         packets = []
@@ -419,8 +438,8 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = json.load(f)
 
-    ws_url = cfg.get("backend", {}).get("ws_url", "ws://127.0.0.1:8080/ws/sim")
-    api_url = cfg.get("backend", {}).get("api_url", "http://127.0.0.1:8080").rstrip("/")
+    ws_url = cfg.get("backend", {}).get("ws_url", "ws://127.0.0.1:8000/ws/sim")
+    api_url = cfg.get("backend", {}).get("api_url", "http://127.0.0.1:8000").rstrip("/")
     reconnect_delay = cfg.get("backend", {}).get("reconnect_interval_s", 2.0)
 
     # Queue for presence / status updates to backend

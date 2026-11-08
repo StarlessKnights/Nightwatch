@@ -38,7 +38,7 @@ except ImportError:
 
 
 class AvonControlDeck:
-    def __init__(self, api_url: str = "http://127.0.0.1:8080"):
+    def __init__(self, api_url: str = "http://127.0.0.1:8000"):
         self.api_url = api_url.rstrip("/")
         self.active_trip_id: str | None = None
 
@@ -197,7 +197,7 @@ class AvonControlDeck:
 
 def main():
     parser = argparse.ArgumentParser(description="AVON AI Computer Operator Control Deck")
-    parser.add_argument("--api-url", default="http://127.0.0.1:8080", help="FastAPI backend URL")
+    parser.add_argument("--api-url", default="http://127.0.0.1:8000", help="FastAPI backend URL")
     args = parser.parse_args()
 
     deck = AvonControlDeck(args.api_url)
