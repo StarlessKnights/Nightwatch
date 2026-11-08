@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from bridge import FaultTolerantSerialBus, PumpStateExtractor, parse_hello
+from bridge import FaultTolerantSerialBus, HAS_SERIAL, PumpStateExtractor, parse_hello
 from demo_ui import perform_action
 
 
@@ -39,6 +39,8 @@ class FakeSerial:
 
 class GatewayTests(unittest.TestCase):
     def test_hello_and_identity_routing(self):
+        if not HAS_SERIAL:
+            self.skipTest("pyserial is required for serial identity routing tests")
         self.assertEqual(parse_hello("AVON|HELLO|v=1|dev=2|profile=pump|fw=0.2.0-pump"), 2)
         self.assertEqual(
             parse_hello("AVON|HELLO|v=1|dev=1|pump=P-201|profile=pump|fw=0.3.0-hil|caps=matrix,knob,temp,light,buzzer"),
@@ -131,6 +133,26 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(extractor.extract_pump(1, "P-201", state)["state"], 4)
         state["pumps"]["P-201"]["available"] = False
         self.assertEqual(extractor.extract_pump(1, "P-201", state)["state"], 5)
+
+    def test_all_dashboard_pump_states_map_to_firmware_codes(self):
+        extractor = PumpStateExtractor({})
+        base = {"pumps": {"P-201": {"run_state": "STOPPED", "eff_health": 1.0, "available": True}},
+                "tanks": {"T-101": {"volume": 600, "capacity": 1000}}, "faults": []}
+        expected = {
+            "STOPPED": 0,
+            "RUNNING": 1,
+            "STARTING": 2,
+        }
+        for run_state, code in expected.items():
+            base["pumps"]["P-201"].update(run_state=run_state, available=True, eff_health=1.0)
+            self.assertEqual(extractor.extract_pump(1, "P-201", base)["state"], code)
+
+        base["pumps"]["P-201"].update(run_state="RUNNING", eff_health=0.49)
+        self.assertEqual(extractor.extract_pump(1, "P-201", base)["state"], 3)
+        base["pumps"]["P-201"].update(run_state="TRIPPED", eff_health=1.0)
+        self.assertEqual(extractor.extract_pump(1, "P-201", base)["state"], 4)
+        base["pumps"]["P-201"].update(run_state="STOPPED", available=False)
+        self.assertEqual(extractor.extract_pump(1, "P-201", base)["state"], 5)
 
     def test_ui_actions_target_selected_pump(self):
         state = {"snapshot": {"state": {"faults": [], "pumps": {"P-203": {"available": True}}}}}

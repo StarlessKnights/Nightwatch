@@ -10,7 +10,7 @@ from .models import (Affected, Cause, Config, CostBreakdown, Diagnosis, Option, 
 from .network import Topology, impact
 from .state import SimState
 
-HARD = {"ASSET_UNAVAILABLE", "PRECONDITION_FAILED", "LEAD_TIME_EXCEEDS_DEADLINE", "PIPELINE_CAP_EXCEEDED",
+HARD = {"ASSET_UNAVAILABLE", "ASSET_TRIPPED", "ASSET_DEGRADED", "PRECONDITION_FAILED", "LEAD_TIME_EXCEEDS_DEADLINE", "PIPELINE_CAP_EXCEEDED",
         "TREATMENT_CAP_EXCEEDED"}
 
 

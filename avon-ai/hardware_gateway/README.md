@@ -5,7 +5,7 @@ The tested firmware lives in [`../hardware`](../hardware). Flash `device_tank` t
 From `avon-ai`, install `backend/requirements.txt` and `hardware_gateway/requirements-hw.txt`, then run the backend:
 
 ```sh
-cd backend && python -m uvicorn app.main:app --port 8080
+cd backend && python -m uvicorn app.main:app --port 8000
 ```
 
 In another terminal:

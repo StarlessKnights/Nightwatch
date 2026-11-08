@@ -5,6 +5,7 @@ from app import alarms, interlock
 from app.models import patch_config
 from app.sim import initial_state, step
 from app.state import RUNNING, STARTING, STOPPED, TRIPPED, AUTO
+from app import actions as act, faults
 from .conftest import fault, run
 
 
@@ -28,6 +29,35 @@ def test_degrade_changeover_only_with_flag(topo, scene):
     state, cfg = scene("scene2_pump_degraded", control={"auto_changeover_on_low_flow": True})
     s = run(state, topo, cfg, 3 + 1 + cfg.control.standby_start_delay_min + 1)
     assert s.pumps["P-204"].run_state == RUNNING and s.pumps["P-204"].auto_started
+
+
+def test_approved_standby_does_not_repair_degraded_duty(topo, scene):
+    state, cfg = scene("scene2_pump_degraded")
+    state = act.schedule(state, act.from_id("START_STANDBY_PUMP:P-204"), cfg)
+    s = run(state, topo, cfg, cfg.decision.operator_approval_buffer_min + cfg.control.standby_start_delay_min + 2)
+    assert s.pumps["P-203"].run_state == RUNNING
+    assert s.pumps["P-203"].health == 1.0
+    assert s.pumps["P-204"].run_state == RUNNING
+    assert faults.effective(s, topo, cfg).pump_w["P-203"] < 0.5  # degradation remains active
+    assert any(f.type == "PUMP_DEGRADE" and f.target == "P-203" for f in s.faults)
+
+
+def test_bad_standby_is_not_started_for_trip_or_approval(topo, scene):
+    state, cfg = scene("scene4_pump_trip")
+    state = replace(state, faults=state.faults + (fault("BAD", "PUMP_DEGRADE", "P-204", w=0.3),))
+    s = run(state, topo, cfg, 20)
+    assert s.pumps["P-203"].run_state == TRIPPED
+    assert s.pumps["P-204"].run_state == STOPPED
+
+
+def test_unavailable_duty_stays_unavailable_when_standby_is_started(topo, scene):
+    state, cfg = scene("scene1_normal")
+    state = replace(state, faults=(fault("LOCK", "PUMP_UNAVAILABLE", "P-203"),))
+    state = act.schedule(state, act.from_id("START_STANDBY_PUMP:P-204"), cfg)
+    s = run(state, topo, cfg, cfg.decision.operator_approval_buffer_min + cfg.control.standby_start_delay_min + 2)
+    assert s.pumps["P-203"].run_state == STOPPED
+    assert not faults.effective(s, topo, cfg).pump_available["P-203"]
+    assert s.pumps["P-204"].run_state == RUNNING
 
 
 def test_unavailable_pump_never_auto_started(topo, scene):

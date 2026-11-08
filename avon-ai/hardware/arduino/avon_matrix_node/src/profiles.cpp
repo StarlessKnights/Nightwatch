@@ -62,6 +62,11 @@ void renderProfile(const DisplayState &s, Framebuffer &f, unsigned long now, uin
     cautionTriangle(f);
     return;
   }
+  // An available standby pump is intentionally dark while stopped.  It
+  // should only show fluid motion once it is starting or running.
+  if (s.pump == PUMP_STOPPED) {
+    return;
+  }
   if (worn && ((now / 400) & 1)) {
     cautionTriangle(f);
     return;
