@@ -678,7 +678,7 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
 
 def main():
     parser = argparse.ArgumentParser(description="AVON AI Hardware Pump Bridge")
-    parser.add_argument("--config", default="hardware_gateway/config.json", help="Path to config.json")
+    parser.add_argument("--config", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json"), help="Path to config.json")
     parser.add_argument("--dry-run", action="store_true", help="Simulate serial writes without hardware Arduinos")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose debug logging")
     args = parser.parse_args()
