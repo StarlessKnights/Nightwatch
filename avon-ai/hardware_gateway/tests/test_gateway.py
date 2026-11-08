@@ -320,6 +320,63 @@ class GatewayTests(unittest.TestCase):
         self.assertIn(("PATCH", "/api/assets/P-203", {"available": False}), calls)
         self.assertIn(("PATCH", "/api/assets/P-203", {"health": 1.0, "available": True}), calls)
 
+    def test_handle_upstream_modulino_trip_and_reset(self):
+        extractor = PumpStateExtractor({})
+        current_state = {"pumps": {"CHP-1": {"run_state": "RUNNING"}}, "faults": []}
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=AsyncMock(status_code=200, json=lambda: {"id": "fault-1"}))
+        mock_client.delete = AsyncMock(return_value=AsyncMock(status_code=200))
+
+        loop = asyncio.new_event_loop()
+        # Button B trips pump
+        pkt_trip = {"dev": 3, "btn": "B"}
+        handled_trip = loop.run_until_complete(
+            handle_upstream_packet(pkt_trip, current_state, client=mock_client, api_url="http://127.0.0.1:8000", extractor=extractor)
+        )
+        self.assertTrue(handled_trip)
+        self.assertEqual(current_state["pumps"]["CHP-1"]["run_state"], "TRIPPED")
+
+        # Button C resets pump
+        pkt_reset = {"dev": 3, "btn": "C"}
+        handled_reset = loop.run_until_complete(
+            handle_upstream_packet(pkt_reset, current_state, client=mock_client, api_url="http://127.0.0.1:8000", extractor=extractor)
+        )
+        self.assertTrue(handled_reset)
+        self.assertEqual(current_state["pumps"]["CHP-1"]["run_state"], "RUNNING")
+        loop.close()
+
+    def test_handle_upstream_thermal_telemetry(self):
+        extractor = PumpStateExtractor({})
+        current_state = {"pumps": {"CHP-1": {"run_state": "RUNNING"}}}
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=AsyncMock(status_code=200))
+
+        pkt_thermal = {"dev": 2, "pump": "CHP-1", "temp": 42.5, "light": 350.0}
+        loop = asyncio.new_event_loop()
+        handled = loop.run_until_complete(
+            handle_upstream_packet(pkt_thermal, current_state, client=mock_client, api_url="http://127.0.0.1:8000", extractor=extractor)
+        )
+        loop.close()
+        self.assertTrue(handled)
+        mock_client.post.assert_called_with(
+            "http://127.0.0.1:8000/api/hardware/status",
+            json={"dev": 2, "pump": "CHP-1", "online": True, "temperature_c": 42.5, "light_level": 350.0, "telemetry": pkt_thermal},
+            timeout=2.0
+        )
+
+    def test_handle_upstream_unhandled_packet(self):
+        extractor = PumpStateExtractor({})
+        current_state = {}
+        mock_client = AsyncMock()
+
+        pkt_unknown = {"foo": "bar"}
+        loop = asyncio.new_event_loop()
+        handled = loop.run_until_complete(
+            handle_upstream_packet(pkt_unknown, current_state, client=mock_client, api_url="http://127.0.0.1:8000", extractor=extractor)
+        )
+        loop.close()
+        self.assertFalse(handled)
+
 
 if __name__ == "__main__":
     unittest.main()
