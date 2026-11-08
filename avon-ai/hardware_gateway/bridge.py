@@ -4,19 +4,19 @@ AVON AI - Computer Hardware Gateway Bridge (3-Pump Active / 5-Pump Ready)
 Connects to the AVON AI simulation backend via WebSocket (/ws/sim)
 and streams real-time telemetry to physical Arduino UNO R4s acting as pumps.
 
-Pump Allocation:
-  Device 1: Pump P-203 (Duty Pump on Tank T-104 -> PL-1)
-  Device 2: Pump P-204 (Standby Pump on Tank T-104 -> PL-1)
-  Device 3: Pump P-201 (Duty Pump on Tank T-101 -> PL-2)
+Pump Allocation (Unified Contract with Hardware Firmware):
+  Device 1: Pump P-201 (Duty Pump on Tank T-101 -> PL-2)
+  Device 2: Pump P-203 (Duty Pump on Tank T-104 -> PL-1)
+  Device 3: Pump P-204 (Standby Pump on Tank T-104 -> PL-1)
   (Future) Device 4: Pump P-SRC1 (Wellhead Inflow 1 -> T-104)
   (Future) Device 5: Pump P-SRC2 (Wellhead Inflow 2 -> T-101)
 
 State Rules:
-  - Trip: Error occurred within pump -> State 4 (TRIPPED, flashing 'X')
-  - Wear: Slider 0..1; if wear < 0.5 -> State 3 (DEGRADED, slow/labored rotation)
-  - Unavailable: Operator shut down / lockout -> State 5 (UNAVAILABLE, lockout slash)
-  - Running: Healthy -> State 1 (RUNNING, smooth rapid spin & fluid flow)
-  - Starting: Auto-changeover warmup -> State 2 (STARTING, pulsing hub)
+  - Trip: Error occurred within pump -> State 4 (TRIPPED, caution triangle)
+  - Wear: Slider 0..1; if wear < 0.5 -> State 3 (DEGRADED, alternating caution triangle / waves)
+  - Unavailable: Operator shut down / lockout -> State 5 (UNAVAILABLE, solid 'X')
+  - Running: Healthy -> State 1 (RUNNING, smooth water waves)
+  - Starting: Auto-changeover warmup -> State 2 (STARTING)
 """
 
 from __future__ import annotations
@@ -77,6 +77,7 @@ class FaultTolerantPumpManager:
         self.baud = s_cfg.get("baud_rate", 115200)
         self.timeout = s_cfg.get("timeout_s", 0.05)
         self.cooldown = s_cfg.get("reconnect_cooldown_s", 3.0)
+        self.auto_detect = s_cfg.get("auto_detect", True)
         self.active_devices: List[int] = s_cfg.get("active_devices", [1, 2, 3])
         self.channels: Dict[int, PumpChannel] = {}
         self._init_channels()
@@ -113,9 +114,35 @@ class FaultTolerantPumpManager:
             self.dry_run = True
             return
 
+        if self.auto_detect:
+            self._attempt_auto_detect()
+
         logger.info(f"Connecting to physical Arduino serial ports ({len(self.active_devices)} active pumps)...")
         for dev_id, ch in self.channels.items():
             self._try_connect(ch)
+
+    def _attempt_auto_detect(self) -> None:
+        """Attempts to auto-detect Arduino boards and match device IDs from HELLO line."""
+        try:
+            available_ports = [p.device for p in serial.tools.list_ports.comports()]
+            if not available_ports:
+                return
+
+            logger.info(f"Detected host serial ports: {available_ports}")
+            # If ports count matches active devices and user hasn't explicitly overridden
+            assigned_ports = set()
+            for dev_id, ch in self.channels.items():
+                if ch.port_path in available_ports and ch.port_path not in assigned_ports:
+                    assigned_ports.add(ch.port_path)
+                else:
+                    # Pick next available port not yet assigned
+                    for p in available_ports:
+                        if p not in assigned_ports:
+                            ch.port_path = p
+                            assigned_ports.add(p)
+                            break
+        except Exception as e:
+            logger.debug(f"Auto-detect scan skipped: {e}")
 
     def _try_connect(self, ch: PumpChannel) -> bool:
         ch.last_reconnect_attempt = time.monotonic()
@@ -150,7 +177,7 @@ class FaultTolerantPumpManager:
             else:
                 return
 
-        # Isolated write
+        # Isolated write: failure on one port never affects other pumps
         try:
             ch.ser.write(line.encode("utf-8"))
             ch.ser.flush()
@@ -196,7 +223,7 @@ class FaultTolerantPumpManager:
 
 
 class PumpStateExtractor:
-    """Extracts state for physical pumps from simulation telemetry."""
+    """Extracts unified telemetry packets for Arduino matrix firmware."""
 
     def __init__(self, cfg: dict):
         self.seq = 0
@@ -205,15 +232,17 @@ class PumpStateExtractor:
         self.seq = (self.seq + 1) % 65536
         return self.seq
 
-    def _pump_code(self, p_data: dict) -> int:
+    def _pump_code(self, p_data: dict, w_int: int) -> int:
         """
         Pump state codes:
           0: stopped, 1: running, 2: starting, 3: degraded, 4: tripped, 5: unavailable
         Rules:
-          - Trip: Pump error -> code 4
           - Unavailable: Operator shut down / lockout -> code 5
-          - Wear < 0.5: Bad wear / degraded -> code 3
+          - Trip: Pump error -> code 4
+          - Wear < 0.5 (w_int < 500): Degraded -> code 3
+          - Starting: Warming up / changeover -> code 2
           - Running: Healthy -> code 1
+          - Stopped: Idle / ready -> code 0
         """
         if not p_data.get("available", True):
             return 5
@@ -223,9 +252,8 @@ class PumpStateExtractor:
         if st == "STARTING":
             return 2
         if st == "RUNNING":
-            cf = p_data.get("eff_capacity_factor", p_data.get("capacity_factor", 1.0))
-            return 3 if cf < 0.5 else 1
-        return 0
+            return 3 if w_int < 500 else 1
+        return 3 if w_int < 500 else 0
 
     def _limiting_code(self, limited_by: str | None) -> int:
         if not limited_by:
@@ -239,14 +267,28 @@ class PumpStateExtractor:
             return 3
         return 0
 
+    def _get_tank_level_cap(self, pump_id: str, state: dict) -> tuple[int, int]:
+        tanks = state.get("tanks", {})
+        tank_id = "T-101" if pump_id == "P-201" else "T-104"
+        t_data = tanks.get(tank_id, {})
+        lvl = int(round(t_data.get("volume", 600)))
+        cap = int(round(t_data.get("capacity", 1000)))
+        return max(0, lvl), max(1, cap)
+
     def extract_pump(self, dev_id: int, pump_id: str, state: dict) -> dict:
-        """Extracts telemetry packet for an outflow pump (P-203, P-204, P-201)."""
+        """Extracts telemetry packet for an outflow pump (P-201, P-203, P-204)."""
         pumps = state.get("pumps", {})
         p = pumps.get(pump_id, {})
         flow = p.get("flow", 0.0)
-        cf = p.get("eff_capacity_factor", p.get("capacity_factor", 1.0))
-        st_code = self._pump_code(p)
+
+        # Base and effective health
+        w_float = p.get("eff_health", p.get("health", p.get("capacity_factor", 1.0)))
+        w_int = int(round(max(0.0, min(1.0, w_float)) * 1000))
+
+        st_code = self._pump_code(p, w_int)
         lim_code = self._limiting_code(p.get("limited_by"))
+        lvl, cap = self._get_tank_level_cap(pump_id, state)
+        available = 1 if (p.get("available", True) and st_code != 5) else 0
 
         al = 0
         if st_code == 4:
@@ -254,15 +296,21 @@ class PumpStateExtractor:
         elif st_code == 3:
             al = 1  # Advisory on wear < 0.5
 
+        # Format includes all keys required by both Person B's firmware
+        # ("pump", "state", "w", "available", "lvl", "cap") and Person A's firmware.
         return {
             "v": 1,
             "seq": self._next_seq(),
             "dev": dev_id,
             "pump": pump_id,
             "state": st_code,
+            "w": w_int,
+            "available": available,
+            "lvl": lvl,
+            "cap": cap,
             "flow": int(round(flow)),
             "max": 200,
-            "rf": int(round(cf * 1000)),
+            "rf": int(round(w_float * 1000)),
             "lim": lim_code,
             "al": al,
             "il": 0
@@ -278,6 +326,8 @@ class PumpStateExtractor:
         is_shut_in = src.get("shut_in", False) or t.get("interlock", {}).get("tripped", False)
         rate = src.get("flow", 0.0) if not is_shut_in else 0.0
         curtail_pct = src.get("curtailment_pct", 0.0)
+        lvl = int(round(t.get("volume", 600)))
+        cap = int(round(t.get("capacity", 1000)))
 
         if is_shut_in:
             st_code = 4  # Tripped by HH interlock
@@ -298,6 +348,10 @@ class PumpStateExtractor:
             "dev": dev_id,
             "pump": f"P-{source_id}",
             "state": st_code,
+            "w": 1000 if not curtail_pct else int(round((1.0 - curtail_pct / 100.0) * 1000)),
+            "available": 0 if is_shut_in else 1,
+            "lvl": lvl,
+            "cap": cap,
             "flow": int(round(rate)),
             "max": int(src.get("rate", 180)),
             "rf": int(round((1.0 - curtail_pct / 100.0) * 1000)),
@@ -348,15 +402,18 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
                         if not state:
                             continue
 
-                        # Extract & send only for active devices
+                        # Extract & send according to unified pump allocation:
+                        # Device 1 -> P-201 (Duty Tank T-101)
+                        # Device 2 -> P-203 (Duty Tank T-104)
+                        # Device 3 -> P-204 (Standby Tank T-104)
                         if 1 in active_devs:
-                            p1 = extractor.extract_pump(1, "P-203", state)
+                            p1 = extractor.extract_pump(1, "P-201", state)
                             pump_mgr.send_packet(1, p1)
                         if 2 in active_devs:
-                            p2 = extractor.extract_pump(2, "P-204", state)
+                            p2 = extractor.extract_pump(2, "P-203", state)
                             pump_mgr.send_packet(2, p2)
                         if 3 in active_devs:
-                            p3 = extractor.extract_pump(3, "P-201", state)
+                            p3 = extractor.extract_pump(3, "P-204", state)
                             pump_mgr.send_packet(3, p3)
                         if 4 in active_devs:
                             p4 = extractor.extract_inflow_pump(4, "SRC-1", "T-104", state)
@@ -369,14 +426,14 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
                         if now - last_log_time >= 2.0:
                             health = pump_mgr.get_health_summary()
                             pumps = state.get("pumps", {})
+                            p201 = pumps.get("P-201", {})
                             p203 = pumps.get("P-203", {})
                             p204 = pumps.get("P-204", {})
-                            p201 = pumps.get("P-201", {})
                             logger.info(
                                 f"Tick t={state.get('t_min')}m | "
-                                f"P-203: {p203.get('flow', 0)} bbl/hr (wear={p203.get('capacity_factor', 1):.2f}) | "
-                                f"P-204: {p204.get('run_state')} | "
-                                f"P-201: {p201.get('flow', 0)} bbl/hr | "
+                                f"P-201(D1): {p201.get('flow', 0)} bbl/hr (w={p201.get('health', 1):.2f}) | "
+                                f"P-203(D2): {p203.get('flow', 0)} bbl/hr (w={p203.get('health', 1):.2f}) | "
+                                f"P-204(D3): {p204.get('run_state')} | "
                                 f"Pumps: [{health}]"
                             )
                             last_log_time = now

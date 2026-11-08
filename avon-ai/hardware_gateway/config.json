@@ -26,10 +26,10 @@
     }
   },
   "pumps": {
-    "device1": {"id": "P-203", "name": "P-203 (Duty T-104)", "type": "outflow", "rated_flow": 200},
-    "device2": {"id": "P-204", "name": "P-204 (Standby T-104)", "type": "outflow", "rated_flow": 200},
-    "device3": {"id": "P-201", "name": "P-201 (Duty T-101)", "type": "outflow", "rated_flow": 200},
-    "device4": {"id": "SRC-1", "name": "P-SRC1 (Wellhead Inflow 1 - Future)", "type": "inflow", "rated_flow": 180, "feeds_tank": "T-104"},
-    "device5": {"id": "SRC-2", "name": "P-SRC2 (Wellhead Inflow 2 - Future)", "type": "inflow", "rated_flow": 150, "feeds_tank": "T-101"}
+    "device1": {"id": "P-201", "name": "P-201 (Duty T-101)", "tank": "T-101", "type": "outflow", "rated_flow": 200},
+    "device2": {"id": "P-203", "name": "P-203 (Duty T-104)", "tank": "T-104", "type": "outflow", "rated_flow": 200},
+    "device3": {"id": "P-204", "name": "P-204 (Standby T-104)", "tank": "T-104", "type": "outflow", "rated_flow": 200},
+    "device4": {"id": "SRC-1", "name": "P-SRC1 (Wellhead Inflow 1 - Future)", "tank": "T-104", "type": "inflow", "rated_flow": 180, "feeds_tank": "T-104"},
+    "device5": {"id": "SRC-2", "name": "P-SRC2 (Wellhead Inflow 2 - Future)", "tank": "T-101", "type": "inflow", "rated_flow": 150, "feeds_tank": "T-101"}
   }
 }

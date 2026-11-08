@@ -45,7 +45,7 @@ export function FaultPanel({ env, network, run }: Props) {
       {Object.entries(pumps).map(([pid, p]) => {
         const tripFault = env.state.faults.find((f) => f.type === 'PUMP_TRIP' && f.target === pid && f.active)
         const isTripped = p.run_state === 'TRIPPED' || !!tripFault
-        const wear = p.capacity_factor ?? 1.0
+        const wear = (p.health as number | undefined) ?? (p.eff_health as number | undefined) ?? (p.capacity_factor as number | undefined) ?? 1.0
         const isBadWear = wear < 0.5
         const borderCol = isTripped ? 'var(--crit)' : !p.available ? '#555' : isBadWear ? 'var(--warn)' : 'var(--ok)'
 
@@ -92,7 +92,7 @@ export function FaultPanel({ env, network, run }: Props) {
                 style={{ width: '100%', margin: '4px 0' }}
                 onChange={(e) => {
                   const val = Number(e.target.value)
-                  run(() => api.patchAsset(pid, { capacity_factor: val }))
+                  run(() => api.patchAsset(pid, { health: val, capacity_factor: val }))
                 }}
               />
             </div>
@@ -131,7 +131,7 @@ export function FaultPanel({ env, network, run }: Props) {
                   for (const f of targetedFaults) {
                     await api.clearFault(f.id)
                   }
-                  await api.patchAsset(pid, { capacity_factor: 1.0, available: true })
+                  await api.patchAsset(pid, { health: 1.0, capacity_factor: 1.0, available: true })
                 })}
               >
                 🔄 Reset {pid} to Normal (100%)

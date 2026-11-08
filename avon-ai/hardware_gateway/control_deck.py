@@ -62,7 +62,7 @@ class AvonControlDeck:
                 )
                 if resp.status_code == 200:
                     self.active_trip_id = resp.json().get("id")
-                    print(f"{RED}{BOLD}✔ {pump_id} TRIPPED! Watch Arduino display flashing 'X'. Standby will auto-start.{RESET}")
+                    print(f"{RED}{BOLD}✔ {pump_id} TRIPPED! Watch Arduino display caution triangle / fault. Standby will auto-start.{RESET}")
                 else:
                     print(f"{RED}Trip failed: {resp.text}{RESET}")
             except Exception as e:
@@ -77,11 +77,11 @@ class AvonControlDeck:
         try:
             resp = requests.patch(
                 f"{self.api_url}/api/assets/{pump_id}",
-                json={"capacity_factor": wear_val},
+                json={"health": wear_val, "capacity_factor": wear_val},
                 timeout=2.0
             )
             if resp.status_code == 200:
-                print(f"{GREEN}✔ Wear updated! Arduino impeller will adapt rotation speed live.{RESET}")
+                print(f"{GREEN}✔ Wear updated! Arduino display will reflect state live.{RESET}")
             else:
                 print(f"{RED}Wear update failed: {resp.text}{RESET}")
         except Exception as e:
@@ -102,10 +102,12 @@ class AvonControlDeck:
                     timeout=2.0
                 )
                 if resp.status_code == 200:
-                    st_str = "AVAILABLE" if new_avail else "OPERATOR SHUT DOWN (LOCKED OUT)"
-                    print(f"{GREEN}✔ {pump_id} is now {st_str}. Arduino will show lockout slash.{RESET}")
+                    status_text = "LOCKED OUT (UNAVAILABLE)" if not new_avail else "RESTORED (AVAILABLE)"
+                    print(f"{GREEN}{BOLD}✔ {pump_id} is now {status_text}. Arduino shows solid 'X' when unavailable.{RESET}")
                 else:
-                    print(f"{RED}Failed: {resp.text}{RESET}")
+                    print(f"{RED}Lockout toggle failed: {resp.text}{RESET}")
+            else:
+                print(f"{RED}Failed to query network snapshot.{RESET}")
         except Exception as e:
             print(f"{RED}Network error: {e}{RESET}")
 
@@ -125,7 +127,7 @@ class AvonControlDeck:
             # 2. Patch wear to 1.0 and available to true
             resp = requests.patch(
                 f"{self.api_url}/api/assets/{pump_id}",
-                json={"capacity_factor": 1.0, "available": True},
+                json={"health": 1.0, "capacity_factor": 1.0, "available": True},
                 timeout=2.0
             )
             if resp.status_code == 200:
@@ -139,76 +141,76 @@ class AvonControlDeck:
         """Operator approval button for AVON AI recommendations."""
         print(f"{CYAN}{BOLD}[OPERATOR APPROVE] Checking recommendations...{RESET}")
         try:
-            resp = requests.get(f"{self.api_url}/api/recommendation", timeout=2.0)
-            if resp.status_code != 200:
-                print(f"{RED}Could not fetch recommendation: {resp.text}{RESET}")
-                return
-
-            rec = resp.json()
-            best_id = rec.get("best_option_id")
-            headline = rec.get("headline", "")
-            savings = rec.get("savings", 0.0)
-
-            print(f" Headline: {BOLD}{headline}{RESET}")
-            if not best_id or best_id == "DO_NOTHING":
-                print(f"{YELLOW}No action required. Plant operating within limits.{RESET}")
-                return
-
-            print(f" Approving: {GREEN}{BOLD}{best_id}{RESET} (Avoided Loss: ${savings:,.2f})")
-            app_resp = requests.post(f"{self.api_url}/api/recommendation/{best_id}/approve", timeout=2.0)
-            if app_resp.status_code == 200:
-                print(f"{GREEN}{BOLD}✔ APPROVED: Operator approved {best_id}! Watch standby pump spin up.{RESET}")
+            rec_resp = requests.get(f"{self.api_url}/api/recommendation", timeout=2.0)
+            if rec_resp.status_code == 200:
+                rec_data = rec_resp.json()
+                best_id = rec_data.get("best_option_id")
+                if best_id:
+                    print(f" Approving recommended option: {best_id}...")
+                    app_resp = requests.post(
+                        f"{self.api_url}/api/recommendation/{best_id}/approve",
+                        timeout=2.0
+                    )
+                    if app_resp.status_code == 200:
+                        print(f"{GREEN}{BOLD}✔ Recommendation APPROVED! Mitigation plan active.{RESET}")
+                    else:
+                        print(f"{RED}Approval failed: {app_resp.text}{RESET}")
+                else:
+                    print(f"{YELLOW}No actionable recommendation currently proposed by AVON AI.{RESET}")
             else:
-                print(f"{RED}Approval rejected: {app_resp.text}{RESET}")
+                print(f"{RED}Failed to fetch recommendations: {rec_resp.text}{RESET}")
         except Exception as e:
-            print(f"{RED}Error: {e}{RESET}")
+            print(f"{RED}Network error: {e}{RESET}")
 
-    def status(self) -> None:
+    def print_status(self) -> None:
         try:
             resp = requests.get(f"{self.api_url}/api/network", timeout=2.0)
-            if resp.status_code != 200:
-                return
-            snap = resp.json().get("snapshot", {})
-            st = snap.get("state", {})
-            pumps = st.get("pumps", {})
-            tanks = st.get("tanks", {})
-
-            print(f"\n{BOLD}=== LIVE PUMP TELEMETRY (t={st.get('t_min', 0)} min) ==={RESET}")
-            for pid in ["P-203", "P-204", "P-201"]:
-                p = pumps.get(pid, {})
-                cf = p.get("capacity_factor", 1.0)
-                wear_badge = f"{RED}WEAR {cf*100:.0f}% (<0.5 BAD){RESET}" if cf < 0.5 else f"{GREEN}WEAR {cf*100:.0f}%{RESET}"
-                avail_badge = f"{GREEN}AVAILABLE{RESET}" if p.get("available") else f"{RED}LOCKED OUT{RESET}"
-                print(f" {BOLD}{pid}{RESET} ({p.get('role')}): {p.get('run_state')} | Flow: {p.get('flow', 0):.0f} bbl/hr | {wear_badge} | {avail_badge}")
-            print(f" Tanks: T-104: {tanks.get('T-104', {}).get('volume', 0):.0f} bbl | T-101: {tanks.get('T-101', {}).get('volume', 0):.0f} bbl\n")
+            if resp.status_code == 200:
+                state = resp.json().get("snapshot", {}).get("state", {})
+                t_min = state.get("t_min", 0)
+                pumps = state.get("pumps", {})
+                tanks = state.get("tanks", {})
+                print(f"\n{BOLD}=== AVON AI Physical Pump Telemetry (t={t_min}m) ==={RESET}")
+                for pid, p in pumps.items():
+                    cf = p.get("health", p.get("eff_health", 1.0))
+                    cf_str = f"{cf:.2f}"
+                    avail = "YES" if p.get("available") else "NO (LOCKOUT)"
+                    st = p.get("run_state", "STOPPED")
+                    print(f"  {pid:6s} | State: {st:8s} | Flow: {p.get('flow', 0):6.1f} bbl/hr | Health: {cf_str} | Available: {avail}")
+                for tid, t in tanks.items():
+                    vol = t.get("volume", 0)
+                    cap = t.get("capacity", 1000)
+                    pct = (vol / cap) * 100 if cap else 0
+                    print(f"  {tid:6s} | Volume: {vol:6.1f}/{cap} bbl ({pct:.1f}%) | Inflow: {t.get('inflow', 0):.1f} | Outflow: {t.get('outflow', 0):.1f}")
+                print("=" * 55 + "\n")
         except Exception as e:
-            print(f"{RED}Status query failed: {e}{RESET}")
+            print(f"{RED}Failed to read status: {e}{RESET}")
 
     def reset_sim(self) -> None:
         try:
             requests.post(f"{self.api_url}/api/sim/reset", timeout=2.0)
             self.active_trip_id = None
-            print(f"{GREEN}✔ Simulation reset to t=0.{RESET}")
+            print(f"{GREEN}✔ Simulation reset to Scenario 1 baseline.{RESET}")
         except Exception as e:
             print(f"{RED}Reset failed: {e}{RESET}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AVON AI Operator Control Deck")
-    parser.add_argument("--api", default="http://127.0.0.1:8080", help="AVON AI REST API URL")
+    parser = argparse.ArgumentParser(description="AVON AI Computer Operator Control Deck")
+    parser.add_argument("--api-url", default="http://127.0.0.1:8080", help="FastAPI backend URL")
     args = parser.parse_args()
 
-    deck = AvonControlDeck(api_url=args.api)
+    deck = AvonControlDeck(args.api_url)
 
-    print("=" * 65)
-    print(f"{BOLD}{CYAN}AVON AI - 3-PUMP OPERATOR HARDWARE TEST DECK{RESET}")
+    print("\n" + "=" * 65)
+    print(f"{BOLD}{GREEN} AVON AI OPERATOR TEST CONTROL DECK (3-PUMP ACTIVE / 5-PUMP READY){RESET}")
     print("=" * 65)
     print(f" [{BOLD}t{RESET}] ⚡ TRIP BUTTON on P-203 (Injects pump error)")
     print(f" [{BOLD}w{RESET}] 🎚️ WEAR SLIDER on P-203 (Set wear between 0 and 1)")
     print(f" [{BOLD}u{RESET}] 🔒 UNAVAILABILITY BUTTON on P-204 (Operator shut down)")
-    print(f" [{BOLD}r1{RESET}] 🔄 RESET P-203 to 100% Normal")
-    print(f" [{BOLD}r2{RESET}] 🔄 RESET P-204 to 100% Normal")
-    print(f" [{BOLD}r3{RESET}] 🔄 RESET P-201 to 100% Normal")
+    print(f" [{BOLD}r1{RESET}] 🔄 RESET P-201 to 100% Normal (Device 1)")
+    print(f" [{BOLD}r2{RESET}] 🔄 RESET P-203 to 100% Normal (Device 2)")
+    print(f" [{BOLD}r3{RESET}] 🔄 RESET P-204 to 100% Normal (Device 3)")
     print(f" [{BOLD}a{RESET}] {GREEN}{BOLD}✔ APPROVE BUTTON{RESET} (Operator approves recommendation)")
     print(f" [{BOLD}s{RESET}] 📊 Live Pump Status")
     print(f" [{BOLD}r{RESET}] 🔄 Reset Complete Simulation")
@@ -217,31 +219,39 @@ def main():
 
     while True:
         try:
-            cmd = input(f"{BOLD}AvonControl > {RESET}").strip().lower()
+            cmd = input(f"{CYAN}deck> {RESET}").strip().lower()
+            if not cmd:
+                continue
             if cmd in ("t", "trip"):
                 deck.trip_pump("P-203")
-            elif cmd in ("w", "wear"):
-                val_str = input("Enter wear value (0.0 to 1.0, bad < 0.5) [default 0.45]: ").strip()
-                val = float(val_str) if val_str else 0.45
+            elif cmd.startswith("w") or cmd.startswith("wear"):
+                parts = cmd.split()
+                val = 0.40 if len(parts) < 2 else float(parts[1])
                 deck.set_wear("P-203", max(0.0, min(1.0, val)))
             elif cmd in ("u", "unavail"):
                 deck.toggle_unavailability("P-204")
-            elif cmd in ("r1", "reset p203"):
-                deck.reset_single_pump("P-203")
-            elif cmd in ("r2", "reset p204"):
-                deck.reset_single_pump("P-204")
-            elif cmd in ("r3", "reset p201"):
+            elif cmd in ("r1", "reset p201"):
                 deck.reset_single_pump("P-201")
+            elif cmd in ("r2", "reset p203"):
+                deck.reset_single_pump("P-203")
+            elif cmd in ("r3", "reset p204"):
+                deck.reset_single_pump("P-204")
             elif cmd in ("a", "approve"):
                 deck.approve_recommendation()
             elif cmd in ("s", "status"):
-                deck.status()
+                deck.print_status()
             elif cmd in ("r", "reset"):
                 deck.reset_sim()
             elif cmd in ("q", "quit", "exit"):
+                print("Exiting control deck.")
                 break
-        except (EOFError, KeyboardInterrupt):
+            else:
+                print(f"Unknown command: '{cmd}'. Press 's' for status or 'q' to quit.")
+        except KeyboardInterrupt:
+            print("\nExiting control deck.")
             break
+        except Exception as e:
+            print(f"{RED}Error: {e}{RESET}")
 
 
 if __name__ == "__main__":

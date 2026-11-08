@@ -205,7 +205,8 @@ void processJsonPacket(const char* jsonStr) {
     if (doc.containsKey("cap")) pump.rated_flow_bbl_hr = doc["cap"];
 
     // Capacity factor (Manas protocol sends rf/tf in thousandths e.g. 1000 = 1.0)
-    if (doc.containsKey("cf")) {
+    if (doc.containsKey("w")) pump.capacity_factor = (float)(doc["w"]) / 1000.0f;
+    else if (doc.containsKey("cf")) {
         pump.capacity_factor = doc["cf"];
     } else if (doc.containsKey("rf")) {
         pump.capacity_factor = (float)(doc["rf"]) / 1000.0f;
