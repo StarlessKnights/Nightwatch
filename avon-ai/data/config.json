@@ -72,7 +72,7 @@
     }
   },
   "ui": {
-    "disclaimer": "Simulated data center cooling data. Recommendations require human approval.",
+    "disclaimer": "Recommendations require human approval.",
     "speeds": [
       1,
       10,

@@ -175,3 +175,10 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 
 /* Keep the diagram grid quiet; all surrounding surfaces stay solid navy. */
 .graph-canvas .react-flow__background { opacity: .65; }
+
+.workspace-heading-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.network-info { position: relative; }
+.workspace-heading .info-button { box-sizing: border-box; display: inline-grid; place-items: center; flex: none; width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 0; border-radius: 50%; font-size: 13px; font-style: italic; font-family: serif; line-height: 1; }
+.network-info-popover { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; width: 320px; max-width: calc(100vw - 24px); padding: 10px 14px; background: var(--panel, #0b1522); border: 1px solid var(--line, #26364a); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .4); color: var(--muted); font-size: 12px; }
+.network-info-popover p { margin: 7px 0; }
+.network-info-popover .process-stages { padding: 0; margin: 8px 0; }

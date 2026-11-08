@@ -19,6 +19,7 @@ export default function App() {
   const { network, env, history, events, rec, connected, error, run } = useSim()
   const [inspectorOpen, setInspectorOpen] = useState(true)
   const [trendsOpen, setTrendsOpen] = useState(true)
+  const [infoOpen, setInfoOpen] = useState(false)
   const [alarmsOpen, setAlarmsOpen] = useState(false)
   const [activityOpen, setActivityOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -61,7 +62,7 @@ export default function App() {
       </div>
       <main className={`plant-main ${inspectorOpen ? '' : 'inspector-collapsed'}`}>
         <section className="graph-workspace" aria-label="Cooling plant network">
-          <div className="workspace-heading"><div className="workspace-title"><h1>Cooling plant network</h1><details className="network-context"><summary>About this network</summary><p>IT heat load, chilled-water loops and heat rejection</p><ol className="process-stages" aria-label="Cooling process"><li>IT heat load</li><li>Hall thermal mass</li><li>Chillers &amp; loops</li><li>Heat rejection</li></ol><p>Latest forecast at T+{env.forecast.as_of_min} min.</p></details></div><button aria-expanded={inspectorOpen} aria-controls="plant-inspector" onClick={() => setInspectorOpen(!inspectorOpen)}>{inspectorOpen ? 'Hide inspector' : 'Open inspector'}</button></div>
+          <div className="workspace-heading"><div className="workspace-title"><h1>Cooling plant network</h1></div><div className="workspace-heading-actions"><button aria-expanded={inspectorOpen} aria-controls="plant-inspector" onClick={() => setInspectorOpen(!inspectorOpen)}>{inspectorOpen ? 'Hide inspector' : 'Open inspector'}</button><div className="network-info"><button className="info-button" aria-label="About this network" aria-expanded={infoOpen} aria-controls="network-info-popover" onClick={() => setInfoOpen(!infoOpen)} onKeyDown={e => { if (e.key === 'Escape') setInfoOpen(false) }}>i</button>{infoOpen && <div id="network-info-popover" className="network-info-popover" role="region" aria-label="About this network"><p>IT heat load, chilled-water loops and heat rejection</p><ol className="process-stages" aria-label="Cooling process"><li>IT heat load</li><li>Hall thermal mass</li><li>Chillers &amp; loops</li><li>Heat rejection</li></ol><p>Latest forecast at T+{env.forecast.as_of_min} min.</p></div>}</div></div></div>
           <div className={`plant-outlook ${shutInTanks.length ? 'is-shut-in' : nextHighHigh ? 'is-at-risk' : 'is-normal'}`}>
             <div><strong>{shutInTanks.length ? `IT load shed · ${shutInTanks.join(', ')}` : nextHighHigh ? `${nextHighHigh.tank} · load-shed forecast in ${Math.ceil(minutesToShutdown!)} min` : 'No high-high crossing forecast'}</strong>
             {(shutInTanks.length > 0 || nextHighHigh) && <span>{shutInTanks.length ? 'High-high protection has shed IT load.' : nextHighHigh ? `High-high at ${clock(env.forecast.as_of_min + nextHighHigh.time_to_HH!, network.config.ui.start_clock)} sheds IT load to protect against a thermal event.` : ''} Forecast at T+{env.forecast.as_of_min} min.</span>}</div>
