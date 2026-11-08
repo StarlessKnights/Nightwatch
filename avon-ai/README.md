@@ -39,5 +39,27 @@ See [hardware_gateway/README.md](hardware_gateway/README.md) for full setup inst
 - Action lead time = intrinsic lead (start delay / ramp / truck 45 min) + `operator_approval_buffer_min`; act-by = time-to-HH minus that.
 - Do-nothing cost is derived from the 8 h rollout, so a degraded pump that keeps cycling the HH interlock costs several shut-ins (~$24.5k each), not one.
 - Pairs are only built from singles that failed on simulation (not hard constraints) – feasible singles dominate any pair containing them.
-- Not built (marked `TODO(phase3)`): LLM layer, Monte Carlo, lead/lag rotation, REROUTE_TO_BUFFER.
+- Not built: Monte Carlo, lead/lag rotation, REROUTE_TO_BUFFER (the buffer edge is topology only).
 - All numbers in `data/config.json` are illustrative. Standards are named only as inspiration.
+
+## AVON Intelligence / Nemotron
+
+The **Agents** tab shows an investigation that starts automatically on a material change. The Inflow/Outflow Monitor reviews tank balance, source rates and discharge restrictions. The Pump Monitor reviews pump health, flow and standby readiness. Each specialist uses the configured routine model (default Nemotron 3.5 Lightning 30B-A3B). The Coordinator uses the reasoning model (default Nemotron 3.5 Super VL 120B-A12B) and receives both dated reports before briefing the operator. Ask can reference the latest completed investigation. If a role cannot obtain a validated model response, its report is labeled **Simulator rules**.
+
+**Demo:** Load Scene 2 (degraded duty pump), open **Agents → Expand**, and select each monitor to inspect its findings. Open **Handoff history** to see both deliveries before the Coordinator review. Open a source in the Coordinator report to trace it back to a specialist and its simulator readings. No chat message is needed to start the investigation.
+
+Open **AVON Intelligence → Brief** for shift handoff: the last 30 simulated minutes of measured tank volumes, recent changes, alarms needing acknowledgment, and the next forecast high-high crossing. Forecasts show the simulation minute they were calculated. **What-if lab** compares a hypothetical disruption to unchanged conditions at the same minute, showing time to high-high and modeled do-nothing cost. Neither forecast changes playback. In **Ask**, try “What changed this shift?” or investigate an incident with Nemotron. Evidence opens as recorded readings, charts and comparisons; historical source events retain their run and record IDs.
+
+Use **Decision Engine** to rank, inspect and approve feasible actions. Intelligence investigates changes and can propose alternatives for validation; it does not copy the engine’s top action into its proposal queue. The alarm strip above both views shows the highest-priority active alarm and opens the acknowledgment desk.
+
+Copy `backend/.env.example` to `backend/.env` and set `NVIDIA_API_KEY` to connect Nemotron. Start the backend normally; it loads that file automatically. Keys stay on the backend. Model IDs and the OpenAI-compatible base URL are configurable. The defaults use Nemotron 3.5 Lightning and Nemotron 3.5 Super VL; the selected endpoint must support tool calling and JSON output. A real inference call requires a valid provider key and model access.
+
+Without a key, shift handoff, deterministic monitoring, evidence, history, the what-if lab and supported scenario questions remain available. Set `AVON_AGENT_ENABLED=false` to disable the intelligence layer completely, or toggle it in the panel. Playback and safety protection remain independent.
+
+Try scene 2 for pump degradation, scene 3 for standby unavailability, scene 4 for automatic changeover, and scene 5 for correlated treatment restrictions. In Ask, try “Why is T-104 filling up?”, “What happens if P-204 becomes unavailable?”, or “What happens if treatment capacity drops by 50%?”. Without Nemotron, only those limited scenario patterns are parsed; broader reasoning requires the configured model.
+
+Proposals enter a central queue, are checked with the same deterministic feasibility/cost evaluator as the ranking engine, and require explicit operator approval. Approval revalidates current state; if playback changes during validation, pause and retry. `EXECUTED_IN_SIM` means scheduled effects were applied, not that a pump ramp or transport cycle has finished. A hypothetical scenario never modifies the playback state. Production-reduction proposals accept integer percentages from 1 to 100; unsupported buffer routing is rejected.
+
+Agent requests, tool results, evidence, proposals, decisions, events, and operator-entered synthetic maintenance notes are retained in `data/agent/audit.sqlite3` (ignored by Git). Historical counts are observations from retained simulation events, not reliability probabilities. Model prose is presented as cited qualitative interpretation; displayed quantities come from simulator evidence. If the audit store is unavailable, the panel reports it while simulation continues.
+
+Agent endpoints: `GET /api/agent`, `POST /api/agent/chat`, `POST /api/agent/enabled`, `POST /api/agent/scenarios`, `POST /api/agent/proposals/{id}/{approve|reject}`, `GET /api/agent/history`, and `POST /api/agent/notes`. The approval body contains the displayed `run_id` to reject decisions from previous runs.

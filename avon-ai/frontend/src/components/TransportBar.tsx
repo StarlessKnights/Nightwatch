@@ -1,4 +1,5 @@
 import { api } from '../api'
+import { money } from '../format'
 import type { Envelope, Network } from '../types'
 
 interface Props { env: Envelope; network: Network; connected: boolean; run: (fn: () => Promise<unknown>) => Promise<void> }
@@ -29,6 +30,12 @@ export function TransportBar({ env, network, connected, run }: Props) {
         decision engine
       </label>
       <div className="spacer" />
+      <div className="ledger" title={Object.entries(env.ledger.breakdown).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${money(v)}`).join('\n')
+        + '\nSaved = projected avoided cost of approved actions vs do-nothing, credited at approval.'}>
+        <span className="loss">Loss {money(env.ledger.loss)}</span>
+        <span className="save">Saved {money(env.ledger.saved)}</span>
+        <span className={env.ledger.net >= 0 ? 'save' : 'loss'}>Net {money(env.ledger.net)}</span>
+      </div>
       <div className={`dot ${connected ? 'ok' : 'bad'}`} title={connected ? 'connected' : 'reconnecting…'} />
       <div className="clock">T+{env.state.t_min} min · {env.state.clock}</div>
     </div>
