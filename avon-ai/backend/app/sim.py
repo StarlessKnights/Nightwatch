@@ -118,7 +118,7 @@ def step(state: SimState, topo: Topology, cfg: Config, rng: np.random.Generator 
     # 5. flow allocation
     src_rate = {
         sid: st.rate_bbl_hr * eff.source_mult[sid] * inflow_multiplier * (1 - st.curtailment_pct / 100)
-        * (0 if st.shut_in else 1) for sid, st in s.sources.items()
+        * (1 - st.shed_pct / 100) for sid, st in s.sources.items()
     }
     fr = flow.allocate(
         topo,

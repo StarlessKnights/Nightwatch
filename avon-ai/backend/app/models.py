@@ -33,6 +33,7 @@ class Limits(_M):
 
 class InterlockCfg(_M):
     enabled: bool
+    shed_ramp_min: float = 0  # minutes to ramp load shed 0 -> 100% on HH trip (and back on reset); 0 = instant
 
 
 class ControlCfg(_M):

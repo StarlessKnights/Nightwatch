@@ -16,7 +16,8 @@
     "ll_reset_bbl": 100
   },
   "interlock": {
-    "enabled": true
+    "enabled": true,
+    "shed_ramp_min": 3
   },
   "control": {
     "standby_start_delay_min": 2,
@@ -71,7 +72,7 @@
     }
   },
   "ui": {
-    "disclaimer": "Simulated data. Recommendations require human approval.",
+    "disclaimer": "Simulated data center cooling data. Recommendations require human approval.",
     "speeds": [
       1,
       10,

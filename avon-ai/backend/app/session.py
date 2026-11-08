@@ -147,7 +147,7 @@ class Session:
                               "curtailed_production": round(curtail, 2), "action_fixed": round(l["action_fixed"], 2)}}
 
     def refresh_forecast(self) -> None:
-        """Do-nothing rollout (includes already-approved actions) + AVON AI predictive alarms."""
+        """Do-nothing rollout (includes already-approved actions) + NIGHTWATCH predictive alarms."""
         traj = rollout(self.state, self.topo, self.cfg)
         fc = tank_forecasts(traj, self.topo, self.cfg)
         self.forecast = {t: f.model_dump() for t, f in fc.items()}
@@ -273,7 +273,7 @@ class Session:
         eff = faults.effective(s, topo, self.cfg)
         fr = self._flows()
         fstat = {t: f["status"] for t, f in self.forecast.items()}
-        rate = {sid: st.rate_bbl_hr * eff.source_mult[sid] * (1 - st.curtailment_pct / 100) * (0 if st.shut_in else 1)
+        rate = {sid: st.rate_bbl_hr * eff.source_mult[sid] * (1 - st.curtailment_pct / 100) * (1 - st.shed_pct / 100)
                 for sid, st in s.sources.items()}
         return {
             "run_id": self.run_id, "revision": self.revision,
@@ -293,7 +293,7 @@ class Session:
                 "diagnosis": self._diagnosis(p)} for p, ps in s.pumps.items()},
             "sources": {sid: {"rate": st.rate_bbl_hr, "eff_rate": round(st.rate_bbl_hr * eff.source_mult[sid], 2),
                               "flow": round(rate[sid], 2), "curtailment_pct": round(st.curtailment_pct, 1),
-                              "curtail_target_pct": st.curtail_target_pct, "shut_in": st.shut_in} for sid, st in s.sources.items()},
+                              "curtail_target_pct": st.curtail_target_pct, "shut_in": st.shut_in, "shed_pct": round(st.shed_pct, 1)} for sid, st in s.sources.items()},
             "pipelines": {pl: {"flow": round(fr.pipeline_flow[pl], 2), "max_flow": ps.max_flow,
                                "r": round(eff.pipeline_r[pl], 3),
                                "cap": round(fr.pipeline_cap[pl], 1)} for pl, ps in s.pipelines.items()},

@@ -6,7 +6,7 @@ Reviewed: 2026-11-07. This is a design review, not an implemented feature. Obtai
 
 The repository is a synthetic produced-water network simulator. Its existing “AVON AI” recommendations are deterministic; there is no model integration, autonomous agent, conversational interface, or persistent incident store.
 
-The topology contains 11 assets: two sources, three tanks, three pumps, two pipelines, and one shared treatment facility. SRC-1 feeds T-104 through duty P-203 / standby P-204 and PL-1; SRC-2 feeds T-101 through P-201 and PL-2. Both pipelines terminate at TRT-1. T-102 is a buffer connected to T-101 by a transfer edge. That edge participates in impact tracing but does not transfer liquid in the physics engine.
+The topology contains 11 assets: two sources, three tanks, three pumps, two pipelines, and one shared treatment facility. LOAD-A feeds HALL-A through duty CHP-1 / standby CHP-2 and LOOP-A; LOAD-B feeds HALL-B through CHP-3 and LOOP-B. Both pipelines terminate at HRJ-1. TES-1 is a buffer connected to HALL-B by a transfer edge. That edge participates in impact tracing but does not transfer liquid in the physics engine.
 
 The default simulation step is one minute; the forecast horizon is 480 minutes. Playback supports 1, 10, and 60 simulated minutes per real second. All configured costs and limits are illustrative.
 
@@ -136,7 +136,7 @@ Before choosing final defaults, measure JSON validity, valid tool arguments, evi
 | 2. Monitoring | Independent event observations, run/revision tracking, actual forecast timestamps, bounded queue, significant-change detection and deduplication. | Detect scripted/manual changes without an operator prompt or browser; no model call for unchanged checks; reset/paused/speed handling. |
 | 3. Briefings | Correlated incidents, graph/shared-resource context, verified evidence, deterministic fallback, Intelligence panel/feed/activity, graph highlights. | One incident for related alarms; separate unrelated incidents; clickable evidence; automatic protections distinguished from pending attention. |
 | 4. Recommendations | Shared deterministic evaluator, strict proposals, central queue, operator approve/reject, revalidation and simulator outcome tracking. | Reject unavailable/late/conflicting actions; no live-state effects from proposals; unchanged original ranking; duplicate/stale approval protection. |
-| 5. Operator interaction | Bounded read/proposal tool loop, evidence-backed questions and sandbox what-if analysis, missing-information prompts. | Explain T-104 filling and compare P-204 unavailability / 50% treatment loss using recorded tool results; live state unchanged. |
+| 5. Operator interaction | Bounded read/proposal tool loop, evidence-backed questions and sandbox what-if analysis, missing-information prompts. | Explain HALL-A filling and compare CHP-2 unavailability / 50% treatment loss using recorded tool results; live state unchanged. |
 | 6. History and critic | Durable event/note provenance, explicitly estimated reliability signals, recommendation critique, post-incident reports. | Trace historical claims to source text/events; no inferred reliability injected into calculations; critique cannot change ranking. |
 
 Across milestones, enforce import-independence and playback/safety equivalence with the agent disabled, unavailable, and returning invalid output. The existing interlock test only checks selected direct imports; extend that boundary to all four protected modules and relevant transitive dependencies.
@@ -154,10 +154,10 @@ All application source, test files, seven scenario definitions, configuration, t
 - Backend: `python -B -m pytest -p no:cacheprovider` passed all 27 tests in 19.89 seconds using Python 3.13.15 and a local virtual environment installed from the declared requirements.
 - Frontend: `npm run build` passed TypeScript compilation and the Vite production build. Vite reported the existing bundle-size warning (largest JavaScript chunk approximately 779 kB before gzip).
 - Frontend: `npm run lint` exited successfully with one existing `react(set-state-in-effect)` warning at `NetworkDiagram.tsx:107`.
-- Isolated FastAPI TestClient smoke test passed network retrieval, scenario load, recommendation, operator approval, and WebSocket sync. Scene 2 selected `START_STANDBY_PUMP:P-204`; the deterministic action cost returned by approval was $248.75.
+- Isolated FastAPI TestClient smoke test passed network retrieval, scenario load, recommendation, operator approval, and WebSocket sync. Scene 2 selected `START_STANDBY_PUMP:CHP-2`; the deterministic action cost returned by approval was $248.75.
 - Runtime reproduction confirmed stale forecast provenance: after advancing scene 2 from minute 0 to minute 1 without a forecast refresh, the cached series still started at 880 bbl, the current tank was 881.5 bbl, and the envelope labelled that forecast as minute 1.
 - Runtime reproduction confirmed that `faults.validate()` accepts pump degradation `factor=2`, outside the catalog's 0.1–0.95 range.
-- Runtime reproduction confirmed that P-201 impact reports T-104 as first-to-limit even though its returned upstream/downstream lists exclude T-104.
+- Runtime reproduction confirmed that CHP-3 impact reports HALL-A as first-to-limit even though its returned upstream/downstream lists exclude HALL-A.
 - No browser visual review or authenticated Nemotron inference test was performed. Model latency, quality, cost, and endpoint compatibility remain evaluation work, not verified application behavior.
 
 Application source and dependency manifests were left unchanged. Local verification generated the backend virtual environment, frontend dependencies, and ignored build artifacts. The only new project content is this review document.

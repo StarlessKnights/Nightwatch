@@ -6,7 +6,7 @@ import type { Envelope, Network } from '../types'
 
 const COL_W = 230
 const ROW_H = 120
-const FLOW_EPS = 0.5 // bbl/hr below which an edge is drawn as "no flow"
+const FLOW_EPS = 0.5 // kW below which an edge is drawn as "no flow"
 
 type D = { node: any; env: Envelope; network: Network; dim: boolean; onDetails?: (id: string) => void }
 
@@ -23,11 +23,11 @@ function SourceNode({ data }: NodeProps<Node<D>>) {
     <div className={`nd source ${data.dim ? 'dim' : ''}`}>
       <H />
       <b>{data.node.id}</b>
-      <div className="asset-purpose">Oilfield collection</div>
-      <div className="sub">{s.flow.toFixed(0)} bbl/hr</div>
+      <div className="asset-purpose">IT heat load</div>
+      <div className="sub">{s.flow.toFixed(0)} kW</div>
       {s.eff_rate > s.rate && <div className="badge warn">surge ×{(s.eff_rate / s.rate).toFixed(2)}</div>}
       {s.curtailment_pct > 0 && <div className="badge">cut {s.curtailment_pct.toFixed(0)}%</div>}
-      {s.shut_in && <div className="badge crit" title="HH interlock: inflow shut in">🔒 SHUT IN</div>}
+      {s.shut_in && <div className="badge crit" title="HH thermal protection: IT load shed">🔒 LOAD SHED {Number(s.shed_pct ?? 100).toFixed(0)}%</div>}
     </div>
   )
 }
@@ -42,18 +42,18 @@ function TankNode({ data }: NodeProps<Node<D>>) {
   return (
     <div className={`nd tank st-${t.status} ${data.dim ? 'dim' : ''}`}>
       <H />
-      <div className="tank-head"><b>{data.node.id}</b><span>{t.volume.toFixed(0)} bbl</span></div>
-      <div className="asset-purpose">{t.role === 'buffer' ? 'Saltwater buffer' : 'Saltwater storage'}</div>
+      <div className="tank-head"><b>{data.node.id}</b><span>{t.volume.toFixed(0)} kWh</span></div>
+      <div className="asset-purpose">{t.role === 'buffer' ? 'Thermal storage' : 'Hall thermal mass'}</div>
       <div className="bar">
         <div className="fill" style={{ height: pct(t.volume) }} />
         <div className="mark" style={{ bottom: pct(lim.H) }}><i>H</i></div>
         <div className="mark hh" style={{ bottom: pct(lim.HH) }}><i>HH</i></div>
       </div>
-      <div className="tank-readings"><span>{Math.max(0, t.capacity - t.volume).toFixed(0)} bbl free</span><span title={`Forecast at T+${data.env.forecast.as_of_min} min`}>{remaining == null ? 'No HH forecast' : `HH in ${Math.ceil(remaining)} min`}</span></div>
-      <div className="sub">In {t.inflow.toFixed(0)} / out {t.outflow.toFixed(0)} bbl/hr</div>
-      {t.interlock.tripped && <div className="badge crit">🔒 HH interlock</div>}
+      <div className="tank-readings"><span>{Math.max(0, t.capacity - t.volume).toFixed(0)} kWh free</span><span title={`Forecast at T+${data.env.forecast.as_of_min} min`}>{remaining == null ? 'No HH forecast' : `HH in ${Math.ceil(remaining)} min`}</span></div>
+      <div className="sub">In {t.inflow.toFixed(0)} / out {t.outflow.toFixed(0)} kW</div>
+      {t.interlock.tripped && <div className="badge crit">🔒 HH protection</div>}
       {t.interlock.ll_tripped && <div className="badge crit">LL trip</div>}
-      {t.overflow_bbl > 0 && <div className="badge crit">OVERFLOW {t.overflow_bbl.toFixed(0)} bbl</div>}
+      {t.overflow_bbl > 0 && <div className="badge crit">THERMAL EVENT {t.overflow_bbl.toFixed(0)} kWh</div>}
     </div>
   )
 }
@@ -68,7 +68,7 @@ function PumpNode({ data }: NodeProps<Node<D>>) {
     <div className={`nd pump-wrap ${data.dim ? 'dim' : ''}`}>
       <H />
       <div className={`pump ${cls}`} title={`${p.run_state}${p.limited_by ? ` (limited by ${p.limited_by})` : ''} · double-click for detail`}>
-        {data.node.id.replace('P-', 'P')}
+        {data.node.id.replace('CHP-', 'CH')}
         <button className="info nodrag" title="Pump detail" aria-label={`View ${data.node.id} details`} onClick={(e) => { e.stopPropagation(); data.onDetails?.(data.node.id) }}>ⓘ</button>
       </div>
       <div className="sub">{!p.available ? 'UNAVAILABLE' : p.run_state === 'STOPPED' && p.role === 'standby' ? 'STANDBY' : p.run_state}</div>
@@ -89,8 +89,8 @@ function PipeNode({ data }: NodeProps<Node<D>>) {
     <div className={`nd pipe ${util > 0.98 ? 'st-warning' : ''} ${data.dim ? 'dim' : ''}`}>
       <H />
       <b>{data.node.label}</b>
-      <div className="asset-purpose">Saltwater pipeline</div>
-      <div className="sub">{p.flow.toFixed(0)} / {p.cap.toFixed(0)} bbl/hr</div>
+      <div className="asset-purpose">Chilled-water loop</div>
+      <div className="sub">{p.flow.toFixed(0)} / {p.cap.toFixed(0)} kW</div>
       {p.r > 1 && <div className="badge warn">restricted r={p.r.toFixed(1)}</div>}
     </div>
   )
@@ -102,8 +102,8 @@ function TreatNode({ data }: NodeProps<Node<D>>) {
     <div className={`nd treat ${p.flow >= p.cap - FLOW_EPS ? 'st-warning' : ''} ${data.dim ? 'dim' : ''}`}>
       <H />
       <b>{data.node.label}</b>
-      <div className="asset-purpose">Produced-water treatment</div>
-      <div className="sub">{p.flow.toFixed(0)} / {p.cap.toFixed(0)} bbl/hr</div>
+      <div className="asset-purpose">Heat rejection</div>
+      <div className="sub">{p.flow.toFixed(0)} / {p.cap.toFixed(0)} kW</div>
       {p.intake_factor < 1 && <div className="badge warn">constrained {(p.intake_factor * 100).toFixed(0)}%</div>}
     </div>
   )
@@ -168,7 +168,7 @@ export function NetworkDiagram({ env, network, onPumpDetail, incidentAssets = []
     return {
       id: `${e.from}-${e.to}`, source: e.from, target: e.to,
       className: transfer ? undefined : `plant-flow-edge ${live ? 'flow-live' : ''}`,
-      label: transfer ? 'buffer transfer' : live ? `${flow.toFixed(0)} bbl/hr` : undefined,
+      label: transfer ? 'buffer transfer' : live ? `${flow.toFixed(0)} kW` : undefined,
       style: { stroke: affected ? 'var(--warn)' : live ? 'var(--flow)' : 'var(--idle)', strokeWidth: affected ? 3 : live ? 2.5 : 1.5, strokeDasharray: live ? undefined : '5 5', opacity: dim ? 0.2 : live ? 1 : 0.6 },
       labelStyle: { fill: 'var(--text)', fontSize: 11 }, labelBgStyle: { fill: 'var(--panel)' },
     }

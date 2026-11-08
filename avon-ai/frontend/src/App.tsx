@@ -27,7 +27,7 @@ export default function App() {
   const [showIntelligence, setShowIntelligence] = useState(true)
   const [focus, setFocus] = useState<{ run: string; assets: string[] } | null>(null)
 
-  if (!network || !env) return <div className="loading">{error ?? 'Connecting to AVON AI backend…'}</div>
+  if (!network || !env) return <div className="loading">{error ?? 'Connecting to NIGHTWATCH backend…'}</div>
   const disclaimer: string = network.config.ui.disclaimer
   const incidentAssets = focus?.run === env.state.run_id ? focus.assets
     : intelligence.data?.incidents.filter((i) => i.status === 'active').flatMap((i) => i.affected_assets) ?? []
@@ -60,22 +60,22 @@ export default function App() {
         </button>
       </div>
       <main className={`plant-main ${inspectorOpen ? '' : 'inspector-collapsed'}`}>
-        <section className="graph-workspace" aria-label="Produced-water network">
-          <div className="workspace-heading"><div className="workspace-title"><h1>Produced-water network</h1><details className="network-context"><summary>About this network</summary><p>Oilfield saltwater collection and treatment</p><ol className="process-stages" aria-label="Produced-water process"><li>Oilfield collection</li><li>Saltwater storage</li><li>Pumps &amp; pipelines</li><li>Treatment</li></ol><p>Latest forecast at T+{env.forecast.as_of_min} min.</p></details></div><button aria-expanded={inspectorOpen} aria-controls="plant-inspector" onClick={() => setInspectorOpen(!inspectorOpen)}>{inspectorOpen ? 'Hide inspector' : 'Open inspector'}</button></div>
+        <section className="graph-workspace" aria-label="Cooling plant network">
+          <div className="workspace-heading"><div className="workspace-title"><h1>Cooling plant network</h1><details className="network-context"><summary>About this network</summary><p>IT heat load, chilled-water loops and heat rejection</p><ol className="process-stages" aria-label="Cooling process"><li>IT heat load</li><li>Hall thermal mass</li><li>Chillers &amp; loops</li><li>Heat rejection</li></ol><p>Latest forecast at T+{env.forecast.as_of_min} min.</p></details></div><button aria-expanded={inspectorOpen} aria-controls="plant-inspector" onClick={() => setInspectorOpen(!inspectorOpen)}>{inspectorOpen ? 'Hide inspector' : 'Open inspector'}</button></div>
           <div className={`plant-outlook ${shutInTanks.length ? 'is-shut-in' : nextHighHigh ? 'is-at-risk' : 'is-normal'}`}>
-            <div><strong>{shutInTanks.length ? `Inflow shut in · ${shutInTanks.join(', ')}` : nextHighHigh ? `${nextHighHigh.tank} · inflow shutdown forecast in ${Math.ceil(minutesToShutdown!)} min` : 'No high-high crossing forecast'}</strong>
-            {(shutInTanks.length > 0 || nextHighHigh) && <span>{shutInTanks.length ? 'High-high protection has stopped oilfield inflow.' : nextHighHigh ? `High-high at ${clock(env.forecast.as_of_min + nextHighHigh.time_to_HH!, network.config.ui.start_clock)} shuts in inflow to protect against a spill.` : ''} Forecast at T+{env.forecast.as_of_min} min.</span>}</div>
+            <div><strong>{shutInTanks.length ? `IT load shed · ${shutInTanks.join(', ')}` : nextHighHigh ? `${nextHighHigh.tank} · load-shed forecast in ${Math.ceil(minutesToShutdown!)} min` : 'No high-high crossing forecast'}</strong>
+            {(shutInTanks.length > 0 || nextHighHigh) && <span>{shutInTanks.length ? 'High-high protection has shed IT load.' : nextHighHigh ? `High-high at ${clock(env.forecast.as_of_min + nextHighHigh.time_to_HH!, network.config.ui.start_clock)} sheds IT load to protect against a thermal event.` : ''} Forecast at T+{env.forecast.as_of_min} min.</span>}</div>
             {(nextHighHigh || shutInTanks.length > 0) && <button onClick={() => { setInspectorOpen(true); setDetailId(null); setShowIntelligence(false) }}>Compare responses</button>}
           </div>
           <div className="graph-canvas"><NetworkDiagram key={env.state.run_id} env={env} network={network} onPumpDetail={id => { setDetailId(id); setInspectorOpen(true) }} incidentAssets={incidentAssets} /></div>
-          <div className="graph-caption"><span><i />Saltwater flow in bbl/hr</span><span>Double-click a pump for details</span></div>
+          <div className="graph-caption"><span><i />Heat removal in kW</span><span>Double-click a chiller pump for details</span></div>
         </section>
         <aside id="plant-inspector" className="right with-intelligence" hidden={!inspectorOpen} aria-label="Plant inspector">
           <div className="right-top">
             {detailId && <PumpDetailPanel id={detailId} env={env} network={network} onClose={() => setDetailId(null)} />}
             <div className="inspector-view" hidden={!!detailId}>
               <div className="panel-switch">
-                <button aria-pressed={showIntelligence} className={showIntelligence ? 'on' : ''} onClick={() => setShowIntelligence(true)}>AVON Intelligence</button>
+                <button aria-pressed={showIntelligence} className={showIntelligence ? 'on' : ''} onClick={() => setShowIntelligence(true)}>NIGHTWATCH Intelligence</button>
                 <button aria-pressed={!showIntelligence} className={!showIntelligence ? 'on' : ''} onClick={() => setShowIntelligence(false)}>Decision engine</button>
               </div>
               <div className="inspector-view" hidden={!showIntelligence}>

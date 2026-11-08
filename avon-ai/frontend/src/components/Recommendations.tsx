@@ -29,7 +29,7 @@ export function Recommendations({ env, rec, selectedId, onSelect, run, disclaime
 
   return (
     <div className="panel-fill scroll">
-      <div className="engine-title"><span className="eyebrow">Response options</span><h2>Decision Engine</h2><p className="hint">Compare responses to keep oilfield saltwater moving. Costs and high-high forecasts are modeled; approvals apply to this simulation run. Assessed at T+{rec.as_of_min} min.</p></div>
+      <div className="engine-title"><span className="eyebrow">Response options</span><h2>Decision Engine</h2><p className="hint">Compare responses to keep halls inside thermal limits. Costs and high-high forecasts are modeled; approvals apply to this simulation run. Assessed at T+{rec.as_of_min} min.</p></div>
       <div className={`headline st-${rec.status}`}>
         <span className="chip">{rec.status.toUpperCase()}</span>
         <span>{rec.headline}</span>

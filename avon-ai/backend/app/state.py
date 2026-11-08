@@ -46,6 +46,7 @@ class SourceState:
     curtail_target_pct: float = 0.0
     curtail_rate_pct_per_min: float = 0.0
     shut_in: bool = False
+    shed_pct: float = 0.0  # how far the HH protection has actually shed this source (ramps toward 100)
 
 
 @dataclass(frozen=True)
@@ -92,7 +93,7 @@ class Alarm:
 
 @dataclass(frozen=True)
 class PendingAction:
-    id: str  # option id, e.g. "START_STANDBY_PUMP:P-204"
+    id: str  # option id, e.g. "START_STANDBY_PUMP:CHP-2"
     kind: str
     params: dict
     effective_at_min: int
@@ -112,7 +113,7 @@ class SimState:
     alarms: tuple = ()
     alarm_timers: dict = field(default_factory=dict)
     pending_actions: tuple = ()
-    truck_withdrawals: tuple = ()  # (t_min, tank_id, bbl, dispatch_id)
+    truck_withdrawals: tuple = ()  # (t_min, tank_id, kWh, dispatch_id)
     next_dispatch_id: int = 0
     flows: Any = None  # flow.FlowResult of the last tick
     new_events: tuple = ()  # events produced by the last step (session accumulates the log)

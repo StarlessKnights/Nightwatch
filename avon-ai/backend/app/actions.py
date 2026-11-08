@@ -31,10 +31,10 @@ class Action:
     @property
     def label(self) -> str:
         if self.kind == START_STANDBY_PUMP:
-            return f"Start standby pump {self.params['pump']}"
+            return f"Start standby chiller pump {self.params['pump']}"
         if self.kind == REDUCE_PRODUCTION:
-            return f"Reduce {self.params['source']} production by {self.params['pct']}%"
-        return f"Dispatch truck to {self.params['tank']}"
+            return f"Migrate {self.params['pct']}% of {self.params['source']} workloads away"
+        return f"Deploy portable chiller to {self.params['tank']}"
 
 
 def from_id(action_id: str) -> Action:
@@ -70,7 +70,7 @@ def validate_combo(combo: list[Action], topo: Topology) -> None:
             if set(a.params) != {"source", "pct"} or a.params["source"] not in topo.sources:
                 raise ValueError("Unknown source or invalid parameters")
             if type(a.params["pct"]) is not int or not 1 <= a.params["pct"] <= 100:
-                raise ValueError("Production reduction must be an integer from 1 to 100")
+                raise ValueError("Load reduction must be an integer from 1 to 100")
         elif a.kind == DISPATCH_TRUCK:
             if set(a.params) != {"tank"} or a.params["tank"] not in topo.tanks:
                 raise ValueError("Unknown tank or invalid parameters")
@@ -149,7 +149,7 @@ def _alloc(state, eff, topo, cfg, force_on: dict):
         pump_w=eff.pump_w, pump_model_cfg=cfg.pump_model,
         pipeline_cap={p: s.max_flow for p, s in state.pipelines.items()}, pipeline_r=eff.pipeline_r,
         treatment_cap={p: s.max_intake * eff.treatment_if[p] for p, s in state.treatment.items()},
-        source_rate={s: st.rate_bbl_hr * eff.source_mult[s] * (1 - st.curtailment_pct / 100) * (0 if st.shut_in else 1)
+        source_rate={s: st.rate_bbl_hr * eff.source_mult[s] * (1 - st.curtailment_pct / 100) * (1 - st.shed_pct / 100)
                      for s, st in state.sources.items()},
         dt_h=cfg.time.dt_min / 60,
     )
