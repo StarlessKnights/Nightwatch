@@ -152,6 +152,21 @@ class AssetPatch(BaseModel):
     health: Optional[float] = None  # pump health w (1 = new)
     capacity_factor: Optional[float] = None  # deprecated alias for health
     available: Optional[bool] = None
+    hardware_online: Optional[bool] = None
+    temperature_c: Optional[float] = None
+    knob_factor: Optional[float] = None
+    hardware_telemetry: Optional[dict] = None
+    run_state: Optional[str] = None
+
+
+class HardwareStatusRequest(BaseModel):
+    dev: int
+    pump: str
+    online: bool = True
+    knob: Optional[float] = None
+    temperature_c: Optional[float] = None
+    light_level: Optional[float] = None
+    telemetry: Optional[dict] = None
 
 
 class SpeedRequest(BaseModel):

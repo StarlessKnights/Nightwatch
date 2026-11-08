@@ -10,13 +10,13 @@ import numpy as np
 from . import actions as act
 from collections import deque
 
-from . import alarms, consequence, decision, diagnosis, faults, messages, pump_model
+from . import alarms, consequence, control, decision, diagnosis, faults, messages, pump_model
 from .forecast import rollout, tank_forecasts
 from .models import Config, Recommendation, load_config, patch_config
 from .network import Topology, impact, load_topology
 from .scenarios import list_scenarios, load_scenario
 from .sim import step
-from .state import ADVISORY, OPERATOR, SYSTEM, Event, Fault, SimState
+from .state import ADVISORY, OPERATOR, RUNNING, STOPPED, SYSTEM, TRIPPED, Event, Fault, SimState
 
 DEFAULT_SCENARIO = "scene1_normal"
 
@@ -53,6 +53,7 @@ class Session:
         self.forecast_do_nothing: dict | None = None
         self._unsent_events: list[dict] = []
         self._unsent_history: list[dict] = []
+        self.hardware_nodes: dict[int, dict] = {}
         buf = self.cfg.history.buffer_min
         self.pump_history = {p: deque(maxlen=buf) for p in self.topo.pumps}
         self.tank_history = {t: deque(maxlen=buf) for t in self.topo.tanks}
@@ -65,6 +66,18 @@ class Session:
 
     def reset(self) -> None:
         self.load(self.scenario_id)
+
+    def start_duty_pumps(self) -> None:
+        """Starts available duty pumps when the simulation starts."""
+        new_pumps = dict(self.state.pumps)
+        changed = False
+        for pid, p in self.state.pumps.items():
+            if p.role == "duty" and p.available and p.run_state == STOPPED:
+                new_pumps[pid] = replace(p, run_state=RUNNING)
+                changed = True
+        if changed:
+            self.state = replace(self.state, pumps=new_pumps)
+            self._changed()
 
     def _changed(self) -> None:
         self.revision += 1
@@ -185,7 +198,17 @@ class Session:
         self.log(Event(self.state.t_min, "FAULT", "FAULT_CLEARED", f.target, {"type": f.type}))
         self.refresh_forecast()
 
-    def patch_asset(self, asset_id: str, health: float | None, available: bool | None) -> None:
+    def patch_asset(
+        self,
+        asset_id: str,
+        health: float | None = None,
+        available: bool | None = None,
+        hardware_online: bool | None = None,
+        temperature_c: float | None = None,
+        knob_factor: float | None = None,
+        hardware_telemetry: dict | None = None,
+        run_state: str | None = None,
+    ) -> None:
         if asset_id not in self.state.pumps:
             raise KeyError(asset_id)
         ps, change = self.state.pumps[asset_id], []
@@ -195,11 +218,170 @@ class Session:
         if available is not None:
             ps = replace(ps, available=available)
             change.append(f"available={available}")
+            if not available and ps.run_state in ("RUNNING", "STARTING"):
+                ps = replace(ps, run_state="STOPPED", start_ready_at_min=None, auto_started=False)
+                change.append("run_state=STOPPED")
+            elif available and ps.run_state == "STOPPED" and ps.role == "duty":
+                ps = replace(ps, run_state="RUNNING")
+                change.append("run_state=RUNNING")
+        if hardware_online is not None:
+            ps = replace(ps, hardware_online=hardware_online)
+            change.append(f"hardware_online={hardware_online}")
+        if temperature_c is not None:
+            ps = replace(ps, temperature_c=round(temperature_c, 1))
+            change.append(f"temperature_c={temperature_c}")
+        if knob_factor is not None:
+            ps = replace(ps, knob_factor=round(knob_factor, 3))
+            change.append(f"knob_factor={knob_factor}")
+        if hardware_telemetry is not None:
+            ps = replace(ps, hardware_telemetry=hardware_telemetry)
+        if run_state is not None:
+            ps = replace(ps, run_state=run_state)
+            change.append(f"run_state={run_state}")
+
         pumps = dict(self.state.pumps)
         pumps[asset_id] = ps
         self.state = replace(self.state, pumps=pumps)
+
+        eff = faults.effective(self.state, self.topo, self.cfg)
+        self.state, ev = control.control_pass(self.state, eff, self.topo, self.cfg)
+        if ev:
+            self.log(*ev)
+
         self.log(Event(self.state.t_min, OPERATOR, "ASSET_PATCHED", asset_id, {"change": ", ".join(change)}))
         self.refresh_forecast()
+
+    def update_hardware_node(
+        self,
+        dev_id: int,
+        pump_id: str,
+        online: bool,
+        knob: float | None = None,
+        temperature_c: float | None = None,
+        light_level: float | None = None,
+        telemetry: dict | None = None,
+    ) -> dict:
+        """Processes real-time hardware status & sensor telemetry from physical Arduinos."""
+        if pump_id not in self.state.pumps:
+            raise KeyError(pump_id)
+
+        ps = self.state.pumps[pump_id]
+        changes = []
+        old_online = ps.hardware_online
+
+        # 1. Physical presence / connectivity coupling
+        if not online:
+            # Arduino disconnected: turn off / lockout
+            ps = replace(ps, hardware_online=False, available=False)
+            changes.append("available=False")
+            if ps.run_state in ("RUNNING", "STARTING"):
+                ps = replace(ps, run_state="STOPPED", start_ready_at_min=None, auto_started=False)
+                changes.append("run_state=STOPPED")
+            if old_online:
+                self.log(Event(self.state.t_min, "HARDWARE", "HARDWARE_DISCONNECTED", pump_id, {"dev": dev_id}))
+        else:
+            # Arduino connected: restore availability (hardware online)
+            ps = replace(ps, hardware_online=True, available=True)
+            changes.append("available=True")
+            # Never automatically turn on backup/standby pumps!
+            # Only duty pumps activate when connected
+            if ps.role != "standby" and ps.run_state in ("STOPPED", "STARTING"):
+                ps = replace(ps, run_state="RUNNING", start_ready_at_min=None)
+                changes.append("run_state=RUNNING")
+            if not old_online:
+                self.log(Event(self.state.t_min, "HARDWARE", "HARDWARE_CONNECTED", pump_id, {"dev": dev_id}))
+
+        # 2. Knob / Health / Throttle input (0.0 to 1.0)
+        if knob is not None:
+            knob_val = min(max(float(knob), 0.0), 1.0)
+            if ps.knob_factor is None or abs(ps.knob_factor - knob_val) >= 0.01:
+                ps = replace(ps, knob_factor=round(knob_val, 3), health=round(knob_val, 3))
+                changes.append(f"knob={knob_val:.2f}")
+                self.log(Event(self.state.t_min, "HARDWARE", "HARDWARE_KNOB_ADJUSTED", pump_id, {"knob": round(knob_val, 3)}))
+
+        # 3. Thermal telemetry & overheat trip protection (85.0 C trip threshold)
+        if temperature_c is not None:
+            temp_val = round(float(temperature_c), 1)
+            ps = replace(ps, temperature_c=temp_val)
+            changes.append(f"temp={temp_val}C")
+            if temp_val >= 85.0:
+                has_overheat = any(
+                    f.type == "PUMP_TRIP" and f.target == pump_id and "Thermal overheat" in str(f.params.get("reason", ""))
+                    for f in self.state.faults
+                )
+                if not has_overheat:
+                    try:
+                        self.inject_fault("PUMP_TRIP", pump_id, {"reason": f"Thermal overheat: {temp_val}C"}, None)
+                        ps = replace(ps, run_state="TRIPPED", start_ready_at_min=None, auto_started=False)
+                        changes.append("run_state=TRIPPED")
+                        self.log(Event(self.state.t_min, "HARDWARE", "THERMAL_TRIP", pump_id, {"temp_c": temp_val}))
+                    except Exception:
+                        pass
+            elif temp_val <= 65.0:
+                overheat_faults = [
+                    f for f in self.state.faults
+                    if f.target == pump_id and "Thermal overheat" in str(f.params.get("reason", ""))
+                ]
+                for of in overheat_faults:
+                    self.clear_fault(of.id)
+                if ps.run_state == "TRIPPED":
+                    ps = replace(ps, run_state="STOPPED")
+                    changes.append("run_state=STOPPED")
+
+        # 4. Telemetry container
+        if telemetry or light_level is not None:
+            tel = dict(ps.hardware_telemetry or {})
+            if light_level is not None:
+                tel["light_level"] = round(float(light_level), 1)
+            if telemetry:
+                tel.update(telemetry)
+            ps = replace(ps, hardware_telemetry=tel)
+
+        pumps = dict(self.state.pumps)
+        pumps[pump_id] = ps
+        self.state = replace(self.state, pumps=pumps)
+
+        self.hardware_nodes[dev_id] = {
+            "dev": dev_id,
+            "pump": pump_id,
+            "online": ps.hardware_online,
+            "temperature_c": ps.temperature_c,
+            "knob_factor": ps.knob_factor,
+            "telemetry": ps.hardware_telemetry,
+            "last_seen_min": self.state.t_min,
+        }
+
+        # Trigger basic control pass (standby auto-start or duty restart)
+        eff = faults.effective(self.state, self.topo, self.cfg)
+        self.state, ev = control.control_pass(self.state, eff, self.topo, self.cfg)
+        if ev:
+            self.log(*ev)
+
+        self.refresh_forecast()
+        return {
+            "pump": pump_id,
+            "changes": changes,
+            "run_state": ps.run_state,
+            "available": ps.available,
+            "health": ps.health,
+            "temperature_c": ps.temperature_c,
+        }
+
+    def get_hardware_summary(self) -> dict:
+        return {
+            "nodes": self.hardware_nodes,
+            "active_pumps": {
+                p: {
+                    "online": ps.hardware_online,
+                    "available": ps.available,
+                    "run_state": ps.run_state,
+                    "temperature_c": ps.temperature_c,
+                    "knob_factor": ps.knob_factor,
+                    "health": ps.health,
+                }
+                for p, ps in self.state.pumps.items()
+            },
+        }
 
     def patch_config(self, patch: dict) -> None:
         self.cfg = patch_config(self.cfg, patch)
@@ -294,7 +476,11 @@ class Session:
                 "flow": round(fr.pump_flow[p], 2), "limited_by": fr.pump_limited_by[p], "auto_started": ps.auto_started,
                 "tank": topo.pumps[p].tank, "pipeline": topo.pumps[p].pipeline,
                 "Q": round(fr.pump_op[p]["Q"], 2), "P": round(fr.pump_op[p]["P"], 2), "r": round(fr.pump_op[p]["r"], 3),
-                "diagnosis": self._diagnosis(p)} for p, ps in s.pumps.items()},
+                "diagnosis": self._diagnosis(p),
+                "hardware_online": ps.hardware_online,
+                "temperature_c": ps.temperature_c,
+                "knob_factor": ps.knob_factor,
+                "hardware_telemetry": ps.hardware_telemetry} for p, ps in s.pumps.items()},
             "sources": {sid: {"rate": st.rate_bbl_hr, "eff_rate": round(st.rate_bbl_hr * eff.source_mult[sid], 2),
                               "flow": round(rate[sid], 2), "curtailment_pct": round(st.curtailment_pct, 1),
                               "curtail_target_pct": st.curtail_target_pct, "shut_in": st.shut_in, "shed_pct": round(st.shed_pct, 1)} for sid, st in s.sources.items()},
@@ -313,6 +499,7 @@ class Session:
             "pending_actions": [{"id": p.id, "kind": p.kind, "effective_at_min": p.effective_at_min, "label": act.from_id(p.id).label}
                                 for p in s.pending_actions],
             "truck_withdrawals": len(s.truck_withdrawals),
+            "hardware": self.get_hardware_summary(),
         }
 
     def _envelope(self) -> dict:

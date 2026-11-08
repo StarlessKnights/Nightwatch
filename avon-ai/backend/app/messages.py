@@ -33,6 +33,8 @@ _REASONS = {"trip": "tripped", "unavailable": "became unavailable", "low_flow": 
 
 REASON_TEXT = {
     "ASSET_UNAVAILABLE": "The asset is unavailable (maintenance or lockout).",
+    "ASSET_TRIPPED": "The standby asset is tripped and must be repaired before it can start.",
+    "ASSET_DEGRADED": "The standby asset is degraded and must be repaired before it can start.",
     "PRECONDITION_FAILED": "A precondition is not met (e.g. already running, already curtailed, no portable chiller available).",
     "LEAD_TIME_EXCEEDS_DEADLINE": "It takes longer to take effect than the time left before HH.",
     "PIPELINE_CAP_EXCEEDED": "The cooling loop is already at its flow cap; extra pump flow would add nothing.",
