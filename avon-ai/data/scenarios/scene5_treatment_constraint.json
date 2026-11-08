@@ -1,7 +1,7 @@
 {
-  "id": "scene5_treatment_constraint", "name": "5. Treatment constraint",
-  "description": "TRT-1 intake drops to 50%. Both pipelines back up; both tanks fill. Curtailment on both sources is the lever.",
+  "id": "scene5_treatment_constraint", "name": "5. Heat wave: heat rejection derated",
+  "description": "A heat wave drops HRJ-1 heat rejection to 50%. Both chilled-water loops back up and both halls heat up. Migrating workloads off both halls is the lever.",
   "seed": 1, "decision_engine_enabled": true,
-  "initial": {"tanks": {"T-104": 700, "T-101": 650}},
-  "faults": [{"id": "F-S5-1", "type": "TREATMENT_CONSTRAINT", "target": "TRT-1", "params": {"factor": 0.5}, "start_min": 0, "end_min": null}]
+  "initial": {"tanks": {"HALL-A": 700, "HALL-B": 650}},
+  "faults": [{"id": "F-S5-1", "type": "TREATMENT_CONSTRAINT", "target": "HRJ-1", "params": {"factor": 0.5}, "start_min": 0, "end_min": null}]
 }

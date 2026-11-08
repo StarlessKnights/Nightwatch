@@ -1,7 +1,7 @@
 {
-  "id": "scene2_pump_degraded", "name": "2. Duty pump degraded",
-  "description": "P-203 degrades to 45% (out 90 vs in 180). Nothing trips, so nothing auto-handles it. Predictive alarm, H at ~13 min, HH at ~46.7 min. AVON AI recommends starting P-204.",
+  "id": "scene2_pump_degraded", "name": "2. Duty chiller pump degrading",
+  "description": "CHP-1 silently degrades to 45% (removing 90 kW against 180 kW of GPU load). Nothing trips, so nothing auto-handles it. Predictive alarm, H at ~13 min, HH at ~46.7 min. NIGHTWATCH recommends starting standby CHP-2 before the hall throttles.",
   "seed": 1, "decision_engine_enabled": true,
-  "initial": {"tanks": {"T-104": 880}},
-  "faults": [{"id": "F-S2-1", "type": "PUMP_DEGRADE", "target": "P-203", "params": {"w": 0.299, "ramp_min": 0}, "start_min": 0, "end_min": null}]
+  "initial": {"tanks": {"HALL-A": 880}},
+  "faults": [{"id": "F-S2-1", "type": "PUMP_DEGRADE", "target": "CHP-1", "params": {"w": 0.299, "ramp_min": 0}, "start_min": 0, "end_min": null}]
 }

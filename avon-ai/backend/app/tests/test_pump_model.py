@@ -57,7 +57,7 @@ def test_compound_and_none(cfg):
 
 def test_scene2_regression_through_rollout(topo, scene):
     state, cfg = scene("scene2_pump_degraded")
-    assert tank_forecasts(rollout(state, topo, cfg), topo, cfg)["T-104"].time_to_HH == pytest.approx(46.7, abs=0.1)
+    assert tank_forecasts(rollout(state, topo, cfg), topo, cfg)["HALL-A"].time_to_HH == pytest.approx(46.7, abs=0.1)
 
 
 def test_mass_conservation_per_tank(topo, scene):
@@ -73,7 +73,7 @@ def test_mass_conservation_per_tank(topo, scene):
 
 def test_restriction_limits_both_pumps(topo, scene):
     state, cfg = scene("scene1_normal")
-    state = replace(state, faults=(fault("R", "PIPELINE_RESTRICTION", "PL-1", r=9.9),),
-                    pumps={**state.pumps, "P-204": replace(state.pumps["P-204"], run_state="RUNNING")})
+    state = replace(state, faults=(fault("R", "PIPELINE_RESTRICTION", "LOOP-A", r=9.9),),
+                    pumps={**state.pumps, "CHP-2": replace(state.pumps["CHP-2"], run_state="RUNNING")})
     s = step(state, topo, cfg)
-    assert s.flows.pipeline_flow["PL-1"] < 100  # second pump behind a blocked line adds ~nothing
+    assert s.flows.pipeline_flow["LOOP-A"] < 100  # second pump behind a blocked line adds ~nothing

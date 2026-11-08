@@ -7,7 +7,7 @@ import { Handoff, ScenarioCompare } from './ShiftDesk'
 
 type Obj = Record<string, unknown>
 const object = (v: unknown): Obj => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Obj : {}
-const labels: Record<string, string> = { volume: 'Stored volume', reported: 'Reported level', cap: 'Available capacity', eff_capacity_factor: 'Effective capacity', HH: 'High-high', time_to_HH: 'Time to high-high', time_to_H: 'Time to high', time_to_overflow: 'Time to overflow', ll_tripped: 'Low-low trip', tripped: 'High-high trip', do_nothing_cost: 'Cost with no new action', limited_by: 'Flow limited by', shared_capacity_assets: 'Other assets sharing capacity', transfer_supported: 'Buffer transfer available' }
+const labels: Record<string, string> = { volume: 'Stored heat', reported: 'Reported thermal level', cap: 'Available capacity', eff_capacity_factor: 'Effective capacity', HH: 'High-high', time_to_HH: 'Time to high-high', time_to_H: 'Time to high', time_to_overflow: 'Time to overflow', ll_tripped: 'Low-low trip', tripped: 'High-high trip', do_nothing_cost: 'Cost with no new action', limited_by: 'Flow limited by', shared_capacity_assets: 'Other assets sharing capacity', transfer_supported: 'Buffer transfer available' }
 const label = (s: string) => labels[s] ?? (s.charAt(0).toUpperCase() + s.slice(1)).replaceAll('_', ' ')
 function scalar(k: string, v: unknown): string {
   if (v == null) return k.startsWith('time_to_') ? 'Not reached in forecast' : 'Not recorded'
@@ -15,7 +15,7 @@ function scalar(k: string, v: unknown): string {
   if (typeof v === 'number') {
     if (k.includes('cost') || ['total', 'fixed', 'hourly', 'production_loss', 'expected_consequence'].includes(k)) return money(v)
     if (k.includes('factor')) return n(100 * v) + '%'
-    const suffix = /_pct$/.test(k) ? '%' : /^(volume|reported|capacity)$|_bbl$/.test(k) ? ' bbl' : /^(inflow|outflow|flow|rate|eff_rate|max_flow|max_intake|cap)$/.test(k) ? ' bbl/hr' : /_min$|^time_to_/.test(k) ? ' min' : ''
+    const suffix = /_pct$/.test(k) ? '%' : /^(volume|reported|capacity)$|_bbl$/.test(k) ? ' kWh' : /^(inflow|outflow|flow|rate|eff_rate|max_flow|max_intake|cap)$/.test(k) ? ' kW' : /_min$|^time_to_/.test(k) ? ' min' : ''
     return n(v) + suffix
   }
   return String(v).replaceAll('_', ' ')
@@ -54,10 +54,10 @@ function EvidenceBody({ e }: { e: Evidence }) {
   if (e.source === 'get_shift_brief') return <Handoff brief={e.value as ShiftBrief}/>
   if (e.source === 'submit_scenario_proposal' && v.baseline) return <ScenarioCompare scenario={e.value as ScenarioResult}/>
   if (e.source === 'get_forecast' && (v.tank || Object.values(v).every(f => 'time_to_HH' in object(f)))) return <Forecast rows={v.tank ? [v] : Object.values(v).map(object)} />
-  if (e.source === 'get_impact') return <>{[['upstream','Feeds this asset'],['downstream','Receives flow'],['shared_capacity_assets','Shares treatment capacity']].map(([key,title]) =>
+  if (e.source === 'get_impact') return <>{[['upstream','Feeds this asset'],['downstream','Receives flow'],['shared_capacity_assets','Shares heat rejection']].map(([key,title]) =>
     <div className="reading" key={key}><h4>{title}</h4><Fields value={v[key]} /></div>)}<p className="hint">These are network connections. Buffer transfers are not simulated.</p></>
   if (e.source === 'get_asset_state') {
-    const capacity = typeof v.volume === 'number' && typeof v.capacity === 'number' ? <Meter title="Tank volume" value={v.volume} max={v.capacity} unit="bbl"/> : typeof v.eff_capacity_factor === 'number' ? <Meter title="Effective pump capacity" value={100 * v.eff_capacity_factor} max={100} unit="%" /> : typeof v.flow === 'number' && typeof v.cap === 'number' && v.cap > 0 ? <Meter title="Flow through asset" value={v.flow} max={v.cap} unit="bbl/hr" /> : null
+    const capacity = typeof v.volume === 'number' && typeof v.capacity === 'number' ? <Meter title="Hall stored heat" value={v.volume} max={v.capacity} unit="bbl"/> : typeof v.eff_capacity_factor === 'number' ? <Meter title="Effective pump capacity" value={100 * v.eff_capacity_factor} max={100} unit="%" /> : typeof v.flow === 'number' && typeof v.cap === 'number' && v.cap > 0 ? <Meter title="Flow through asset" value={v.flow} max={v.cap} unit="kW" /> : null
     const keys = ['run_state','available','flow','eff_capacity_factor','inflow','outflow','reported','shut_in','curtailment_pct','limited_by']
     return <>{capacity}<div className="measure-grid">{keys.filter(k=> k in v).map(k=><div key={k}><small>{label(k)}</small><b>{scalar(k,v[k])}</b></div>)}</div><details><summary>All asset readings</summary><Fields value={v}/></details></>
   }

@@ -1,7 +1,7 @@
 {
-  "id": "scene6_interlock_only", "name": "6. Interlock only (engine off)",
-  "description": "Decision engine disabled. P-203 is degraded and nobody acts; the independent HH interlock still shuts in SRC-1 at 950 bbl.",
+  "id": "scene6_interlock_only", "name": "6. Thermal protection only (engine off)",
+  "description": "Decision engine disabled. CHP-1 is degraded and nobody acts; the independent HH thermal protection still sheds Hall A IT load at 950 kWh.",
   "seed": 1, "decision_engine_enabled": false,
-  "initial": {"tanks": {"T-104": 880}},
-  "faults": [{"id": "F-S6-1", "type": "PUMP_DEGRADE", "target": "P-203", "params": {"w": 0.299, "ramp_min": 0}, "start_min": 0, "end_min": null}]
+  "initial": {"tanks": {"HALL-A": 880}},
+  "faults": [{"id": "F-S6-1", "type": "PUMP_DEGRADE", "target": "CHP-1", "params": {"w": 0.299, "ramp_min": 0}, "start_min": 0, "end_min": null}]
 }

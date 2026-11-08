@@ -1,7 +1,7 @@
 """Layer 5: independent HH / LL interlock.
 
 Deliberately imports ONLY state/config types. It must never import decision, actions or forecast:
-it reads raw (protection-conservative) tank levels and acts, whether or not AVON AI is running.
+it reads raw (protection-conservative) tank levels and acts, whether or not NIGHTWATCH is running.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def interlock_pass(state: SimState, topo: Topology, cfg: Config) -> tuple[SimSta
         il = interlocks[tank]
         hi, lo = ts.reported_bbl, ts.reported_lo_bbl
 
-        # HH: shut in the inflow. Releases only once the level has fallen below the reset threshold.
+        # HH: shed the load (ramped by interlock.shed_ramp_min). Releases only once the level has fallen below the reset threshold.
         tripped = il.tripped
         if not tripped and hi >= lim.HH:
             tripped = True
@@ -43,8 +43,12 @@ def interlock_pass(state: SimState, topo: Topology, cfg: Config) -> tuple[SimSta
 
         interlocks[tank] = InterlockState(tripped, ll)
         for s in topo.tank_sources[tank]:
-            if sources[s].shut_in != tripped:
-                sources[s] = replace(sources[s], shut_in=tripped)
+            src = sources[s]
+            target = 100.0 if tripped else 0.0
+            step = 100.0 / cfg.interlock.shed_ramp_min if cfg.interlock.shed_ramp_min > 0 else 100.0
+            shed = target if abs(target - src.shed_pct) <= step else src.shed_pct + step * (1 if target > src.shed_pct else -1)
+            if src.shut_in != tripped or shed != src.shed_pct:
+                sources[s] = replace(src, shut_in=tripped, shed_pct=shed)
         if ll:
             for p in topo.tank_pumps[tank]:
                 if pumps[p].run_state in (RUNNING, STARTING, STOPPED):

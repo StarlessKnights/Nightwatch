@@ -68,7 +68,7 @@ async def lifespan(_: FastAPI):
         await agent.close()
 
 
-app = FastAPI(title="AVON AI", lifespan=lifespan)
+app = FastAPI(title="NIGHTWATCH", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 

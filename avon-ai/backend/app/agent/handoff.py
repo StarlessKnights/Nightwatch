@@ -19,7 +19,7 @@ def operator_read(ctx):
         priority += f" {limit['tank']} is forecast to reach high-high at T+{limit['at_min']:g}, based on the forecast from T+{brief['forecast_as_of']}."
     trend = next(iter(brief["trends"]), None)
     if trend and len(trend["samples"]) > 1 and trend["change_bbl"] > 0:
-        priority += f" Check whether inflow is exceeding outflow at {trend['tank']}; its measured volume is rising."
+        priority += f" Check whether heat load is exceeding heat removal at {trend['tank']}; its stored heat is rising."
     return fact, priority
 
 
@@ -30,10 +30,10 @@ def handoff_text(brief):
         row = brief["trends"][0]
         if len(row["samples"]) > 1:
             delta = row["change_bbl"]
-            direction = f"rose {delta:g} bbl" if delta > 0 else f"fell {abs(delta):g} bbl" if delta < 0 else "was unchanged"
-            parts.append(f"{row['tank']} volume {direction} since T+{brief['from_min']}.")
+            direction = f"rose {delta:g} kWh" if delta > 0 else f"fell {abs(delta):g} kWh" if delta < 0 else "was unchanged"
+            parts.append(f"{row['tank']} stored heat {direction} since T+{brief['from_min']}.")
         else:
-            parts.append("Only the initial tank readings are available.")
+            parts.append("Only the initial hall readings are available.")
     if brief["recent_events"]:
         last = brief["recent_events"][0]
         parts.append(f"Latest recorded change at T+{last['t_min']}: {last['text']}")

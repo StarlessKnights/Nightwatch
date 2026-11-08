@@ -31,7 +31,7 @@ export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) 
     if (tab === 'History') agentCall<History>('/history').then((value) => { if (active) { setHistory(value); setHistoryError(null) } }).catch((e) => { if (active) setHistoryError(String(e)) })
     return () => { active = false }
   }, [tab, data?.run_id, latestActivity, notesSaved])
-  if (!data) return <div className="panel-fill"><h3>AVON Intelligence</h3><p className="hint">{error ?? 'Connecting to intelligence service…'}</p></div>
+  if (!data) return <div className="panel-fill"><h3>NIGHTWATCH Intelligence</h3><p className="hint">{error ?? 'Connecting to intelligence service…'}</p></div>
 
   const refs = (ids: string[]) => <div className="evidence-links">{ids.map((id) => {
     const evidence = data.evidence[id]
@@ -51,7 +51,7 @@ export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) 
     setBusy(null)
   }
   return <div className="panel-fill intelligence">
-    <div className="intelligence-heading"><div><span className="eyebrow">Powered by Nemotron</span><h2>AVON Intelligence</h2><span className={`agent-status ${data.enabled ? 'online' : ''}`}>{data.status}</span></div>
+    <div className="intelligence-heading"><div><span className="eyebrow">Powered by Nemotron</span><h2>NIGHTWATCH Intelligence</h2><span className={`agent-status ${data.enabled ? 'online' : ''}`}>{data.status}</span></div>
       <label className="toggle"><input type="checkbox" checked={data.enabled} onChange={(e) => run('/enabled', { enabled: e.target.checked })} />Enabled</label></div>
     <p className="hint">{data.provider} · {data.last_observation_min == null ? 'Waiting for observation' : `observed T+${data.last_observation_min}`}</p>
     {data.provider === 'Deterministic fallback' && <p className="agent-notice">Nemotron offline · Shift handoff and what-if simulations are available.</p>}
@@ -97,10 +97,10 @@ export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) 
 
     {tab === 'Ask' && <>
       {(data.chat_busy || busy === 'chat') && <div className="ask-progress" role="status">Reviewing the plant readings…<div role="progressbar" aria-label="Preparing operator assessment"><i /></div></div>}
-      <div className="suggested-questions">{['Why is T-104 filling up?', 'What happens if P-204 becomes unavailable?', 'What changed this shift?'].map((text) => <button key={text} disabled={data.chat_busy || !!busy || !data.enabled} onClick={() => send(text)}>{text}</button>)}</div>
+      <div className="suggested-questions">{['Why is HALL-A heating up?', 'What happens if CHP-2 becomes unavailable?', 'What changed this shift?'].map((text) => <button key={text} disabled={data.chat_busy || !!busy || !data.enabled} onClick={() => send(text)}>{text}</button>)}</div>
       {data.messages.map((message) => <article className={`agent-message ${message.role}`} key={message.id}><span className={`tag tag-${message.role === 'operator' ? 'OPERATOR' : 'ADVISORY'}`}>{message.role === 'operator' ? 'OPERATOR' : 'ADVISORY'}</span><span className="hint"> T+{message.t_min} {message.source === 'DETERMINISTIC' ? '· Rule-based assessment' : message.source === 'NEMOTRON' ? '· Nemotron' : ''}</span><p>{message.text}</p>{interpretations(message.interpretations ?? [], message.source === 'NEMOTRON' ? 'Nemotron’s read' : 'Operator assessment')}{interpretations(message.concerns ?? [], 'Review')}{message.evidence_ids.some(id => ![...(message.interpretations ?? []), ...(message.concerns ?? [])].some(item => item.evidence_ids.includes(id))) && <details><summary>Supporting readings</summary>{refs(message.evidence_ids.filter(id => ![...(message.interpretations ?? []), ...(message.concerns ?? [])].some(item => item.evidence_ids.includes(id))))}</details>}{message.question && <p className="agent-notice">{message.question}</p>}</article>)}
 
-      <form className="agent-chat" onSubmit={(e) => { e.preventDefault(); void send(input) }}><label htmlFor="agent-question">Ask about the network or a simulated scenario</label><textarea id="agent-question" maxLength={2000} rows={3} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask AVON Intelligence…" /><button className="primary" disabled={!input.trim() || data.chat_busy || !!busy || !data.enabled}>Analyze</button></form>
+      <form className="agent-chat" onSubmit={(e) => { e.preventDefault(); void send(input) }}><label htmlFor="agent-question">Ask about the network or a simulated scenario</label><textarea id="agent-question" maxLength={2000} rows={3} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask NIGHTWATCH Intelligence…" /><button className="primary" disabled={!input.trim() || data.chat_busy || !!busy || !data.enabled}>Analyze</button></form>
       {[...data.scenarios].reverse().map(s => <details key={s.id}><summary>What-if at T+{s.t_min} · {s.faults.map(f => f.target).join(', ')}</summary><ScenarioCompare scenario={s}/>{refs(s.evidence_ids)}</details>)}
     </>}
 
@@ -110,7 +110,7 @@ export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) 
       <p className="hint">Synthetic maintenance notes and fault observations retain source provenance. They do not change simulation reliability parameters.</p>
       {historyError && <p role="alert">{historyError}</p>}
       <details><summary>Add a maintenance note</summary><form className="agent-chat" onSubmit={async (e) => { e.preventDefault(); setBusy('note'); const ok = await run('/notes', { asset_id: asset, text: note }); if (ok) { setNote(''); setNotesSaved(n => n+1) } setBusy(null) }}><label htmlFor="note-asset">Asset</label><select id="note-asset" value={asset} onChange={(e) => setAsset(e.target.value)}>{assets.map((a) => <option key={a}>{a}</option>)}</select><label htmlFor="maintenance-note">Maintenance observation</label><textarea id="maintenance-note" rows={3} maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)} /><button disabled={!note.trim() || !!busy}>Save simulated note</button></form></details>
-      {history && !history.signals.length && <p className="hint">No pump fault events in retained history.</p>}
+      {history && !history.signals.length && <p className="hint">No chiller-pump fault events in retained history.</p>}
       {history?.signals.map((signal) => <article className="incident" key={signal.asset_id}><h4>{signal.asset_id} · {signal.observed_fault_events} observed fault events</h4><p className="hint">{signal.interpretation}</p><details><summary>Source events</summary><SourceTimeline rows={signal.sources}/></details></article>)}
       {history?.notes.map((item) => <article className="incident" key={item.id}><h4>{item.data.asset_id}</h4><p>{item.data.text}</p><details><summary>Provenance</summary><p className="hint">{item.data.provenance}<br />{item.at}<br />Run {item.run_id}<br />Record {item.id}</p></details></article>)}<p className="hint">{history?.coverage}</p>
     </>}
