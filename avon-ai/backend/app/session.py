@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from uuid import uuid4
+import logging
 
 import numpy as np
 
 from . import actions as act
 from collections import deque
 
-from . import alarms, decision, diagnosis, faults, messages, pump_model
+from . import alarms, consequence, decision, diagnosis, faults, messages, pump_model
 from .forecast import rollout, tank_forecasts
 from .models import Config, Recommendation, load_config, patch_config
 from .network import Topology, impact, load_topology
@@ -21,6 +23,8 @@ DEFAULT_SCENARIO = "scene1_normal"
 
 class Session:
     def __init__(self):
+        self.listeners = []
+        self.revision = 0
         self.topo: Topology = load_topology()
         self.cfg: Config = load_config()
         self.running = False
@@ -33,6 +37,7 @@ class Session:
     def load(self, scenario_id: str, announce: bool = True) -> None:
         state, cfg, meta = load_scenario(scenario_id, self.topo, self.cfg)
         self.cfg, self.state, self.meta = cfg, state, meta
+        self.run_id = uuid4().hex
         self.scenario_id = scenario_id
         self.engine_enabled = meta.get("decision_engine_enabled", True)
         self.rng = np.random.default_rng(meta.get("seed", 0))
@@ -42,6 +47,7 @@ class Session:
         self._event_seq = 0
         self._fault_seq = 0
         self.payoff: dict | None = None
+        self.ledger = {"shutin": 0.0, "spill": 0.0, "action_fixed": 0.0, "saved": 0.0}
         self.last_advisory: str | None = None
         self.forecast: dict = {}
         self.forecast_do_nothing: dict | None = None
@@ -60,6 +66,14 @@ class Session:
     def reset(self) -> None:
         self.load(self.scenario_id)
 
+    def _changed(self) -> None:
+        self.revision += 1
+        for listener in tuple(self.listeners):
+            try:
+                listener()
+            except Exception:
+                logging.getLogger(__name__).exception("Observation listener failed")
+
     # ---------- events / history ----------
     def log(self, *events: Event) -> None:
         for e in events:
@@ -69,6 +83,8 @@ class Session:
             self.event_log.append(row)
             self._unsent_events.append(row)
         del self.event_log[:-2000]
+        if events:
+            self._changed()
 
     def _record_history(self) -> None:
         pt = {"t": self.state.t_min, **{t: round(ts.volume_bbl, 2) for t, ts in self.state.tanks.items()}}
@@ -106,16 +122,36 @@ class Session:
     # ---------- stepping ----------
     def advance(self, n: int = 1) -> None:
         for _ in range(n):
-            self.state = step(self.state, self.topo, self.cfg, self.rng)
+            prev = self.state
+            self.state = step(prev, self.topo, self.cfg, self.rng)
+            self._accrue(prev)
             self.log(*self.state.new_events)
             self._record_history()
             self._record_telemetry(self.state.t_min - self.cfg.time.dt_min)
+        self._changed()
+
+    def _accrue(self, prev: SimState) -> None:
+        """Realized loss: each interlock shut-in and each overflow event, priced with the consequence model."""
+        s, cfg = self.state, self.cfg
+        for tank in s.trip_counts:
+            rate = sum(prev.sources[x].rate_bbl_hr for x in self.topo.tank_sources[tank])
+            self.ledger["shutin"] += (s.trip_counts[tank] - prev.trip_counts[tank]) * consequence.shutin_cost(rate, cfg)
+            self.ledger["spill"] += (s.overflow_events[tank] - prev.overflow_events[tank]) * cfg.consequence.spill_penalty
+
+    def ledger_dict(self) -> dict:
+        l, c = self.ledger, self.cfg
+        curtail = consequence.production_loss(self.state.curtailed_bbl, c)
+        loss = l["shutin"] + l["spill"] + l["action_fixed"] + curtail
+        return {"loss": round(loss, 2), "saved": round(l["saved"], 2), "net": round(l["saved"] - loss, 2),
+                "breakdown": {"shutin": round(l["shutin"], 2), "spill": round(l["spill"], 2),
+                              "curtailed_production": round(curtail, 2), "action_fixed": round(l["action_fixed"], 2)}}
 
     def refresh_forecast(self) -> None:
         """Do-nothing rollout (includes already-approved actions) + AVON AI predictive alarms."""
         traj = rollout(self.state, self.topo, self.cfg)
         fc = tank_forecasts(traj, self.topo, self.cfg)
         self.forecast = {t: f.model_dump() for t, f in fc.items()}
+        self.forecast_as_of_min = traj.start_min
         self.forecast_do_nothing = None
         if self.state.pending_actions:  # also show what would happen WITHOUT the approved actions
             bare = rollout(replace(self.state, pending_actions=()), self.topo, self.cfg)
@@ -123,6 +159,7 @@ class Session:
         if self.engine_enabled:
             self.state, ev = alarms.predictive_pass(self.state, self.cfg, {t: f.time_to_HH for t, f in fc.items()})
             self.log(*ev)
+        self._changed()
 
     # ---------- commands ----------
     def inject_fault(self, type_: str, target: str, params: dict, end_min: int | None) -> Fault:
@@ -207,11 +244,28 @@ class Session:
         self.payoff = {"option_id": option_id, "label": opt.label, "approved_min": self.state.t_min,
                        "do_nothing_cost": rec.do_nothing_cost, "action_cost": opt.cost_breakdown.total,
                        "savings": round(rec.do_nothing_cost - (opt.cost_breakdown.total or 0), 2)}
+        self.ledger["saved"] += self.payoff["savings"]  # projected avoided cost vs do-nothing at approval time
+        self.ledger["action_fixed"] += opt.cost_breakdown.fixed
         self.log(Event(self.state.t_min, OPERATOR, "ACTION_APPROVED", None,
                        {"label": opt.label, "lead_min": opt.lead_time_min, "option": option_id}))
         self.last_advisory = None
         self.refresh_forecast()
         return rec
+
+    def commit_verified_actions(self, combo, option, expected_revision: int) -> None:
+        """Operator-only commit after deterministic evaluation of this exact revision."""
+        if not self.engine_enabled:
+            raise PermissionError("decision engine disabled")
+        if self.revision != expected_revision:
+            raise ValueError("State changed during validation; retry approval or pause playback")
+        act.validate_combo(combo, self.topo)
+        if not option.feasible or option.action_id != act.combo_id(combo):
+            raise ValueError("Action was not validated")
+        for a in combo:
+            self.state = act.schedule(self.state, a, self.cfg)
+        self.log(Event(self.state.t_min, OPERATOR, "ACTION_APPROVED", None,
+                       {"label": option.label, "lead_min": option.lead_time_min, "option": option.action_id}))
+        self.refresh_forecast()
 
     # ---------- serialization ----------
     def state_dict(self) -> dict:
@@ -222,6 +276,7 @@ class Session:
         rate = {sid: st.rate_bbl_hr * eff.source_mult[sid] * (1 - st.curtailment_pct / 100) * (0 if st.shut_in else 1)
                 for sid, st in s.sources.items()}
         return {
+            "run_id": self.run_id, "revision": self.revision,
             "t_min": s.t_min, "clock": messages.fmt_clock(s.t_min, self.cfg.ui.start_clock),
             "tanks": {t: {
                 "volume": round(ts.volume_bbl, 2), "capacity": topo.tanks[t].capacity, "reported": round(ts.reported_bbl, 2),
@@ -263,8 +318,8 @@ class Session:
             "auto_changeover_on_low_flow": self.cfg.control.auto_changeover_on_low_flow,
             "state": self.state_dict(),
             "forecast": {"tanks": self.forecast, "do_nothing": self.forecast_do_nothing,
-                         "series_step_min": self.cfg.time.forecast_series_step_min, "as_of_min": self.state.t_min},
-            "payoff": self.payoff,
+                         "series_step_min": self.cfg.time.forecast_series_step_min, "as_of_min": self.forecast_as_of_min},
+            "payoff": self.payoff, "ledger": self.ledger_dict(),
         }
 
     def tick_message(self) -> dict:
@@ -277,7 +332,6 @@ class Session:
         return {"type": "sync", **self._envelope(), "event_log": self.event_log, "history": self.history}
 
     def sync_message(self) -> dict:
-        self._unsent_events, self._unsent_history = [], []
         return self.snapshot()
 
     # ---------- pump detail ----------

@@ -1,0 +1,6 @@
+backend/.venv/
+__pycache__/
+.pytest_cache/
+.env
+backend/.env
+data/agent/

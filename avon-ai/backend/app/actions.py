@@ -56,6 +56,30 @@ def combo_from_id(option_id: str) -> list[Action]:
     return [from_id(p) for p in option_id.split("+")]
 
 
+def validate_combo(combo: list[Action], topo: Topology) -> None:
+    """Validate external proposals before any dictionary lookup or rollout."""
+    if not 1 <= len(combo) <= 4:
+        raise ValueError("Provide between one and four actions")
+    for a in combo:
+        if a.kind == START_STANDBY_PUMP:
+            if set(a.params) != {"pump"} or a.params["pump"] not in topo.pumps:
+                raise ValueError("Unknown pump or invalid parameters")
+            if topo.pumps[a.params["pump"]].role != "standby":
+                raise ValueError("Only standby pumps can be proposed")
+        elif a.kind == REDUCE_PRODUCTION:
+            if set(a.params) != {"source", "pct"} or a.params["source"] not in topo.sources:
+                raise ValueError("Unknown source or invalid parameters")
+            if type(a.params["pct"]) is not int or not 1 <= a.params["pct"] <= 100:
+                raise ValueError("Production reduction must be an integer from 1 to 100")
+        elif a.kind == DISPATCH_TRUCK:
+            if set(a.params) != {"tank"} or a.params["tank"] not in topo.tanks:
+                raise ValueError("Unknown tank or invalid parameters")
+        else:
+            raise ValueError("Unsupported action")
+    if any(conflicts(a, b) for i, a in enumerate(combo) for b in combo[i + 1:]):
+        raise ValueError("Conflicting or duplicate actions")
+
+
 def lead_time_min(a: Action, cfg: Config) -> float:
     """Intrinsic lead time (time from taking effect to delivering effect). Approval buffer is added separately."""
     if a.kind == START_STANDBY_PUMP:
@@ -93,6 +117,8 @@ def _trucks_in_use(state: SimState) -> int:
 def preconditions(a: Action, state: SimState, eff: Effective, topo: Topology, cfg: Config,
                   extra_trucks: int = 0) -> list[str]:
     """Hard-constraint reason codes (empty = OK)."""
+    if any(conflicts(a, from_id(p.id)) for p in state.pending_actions):
+        return ["PRECONDITION_FAILED"]
     if a.kind == START_STANDBY_PUMP:
         p = a.params["pump"]
         if not eff.pump_available[p]:

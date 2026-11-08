@@ -10,3 +10,12 @@ export function clock(tMin: number, start = '00:00'): string {
   const hh = (Math.floor(total / 60) % 24 + 24) % 24
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
 }
+
+export const compactNumber = (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 1 })
+
+const eventTerms: Record<string,string> = {
+  PUMP_DEGRADE: 'reduced pump capacity', PUMP_TRIP: 'pump trip', PUMP_UNAVAILABLE: 'pump unavailable',
+  TREATMENT_CONSTRAINT: 'reduced treatment capacity', PIPELINE_RESTRICTION: 'pipeline restriction',
+  INFLOW_SURGE: 'inflow surge', LEVEL_SENSOR_FAULT: 'level sensor fault', FORECAST_HH: 'predicted high-high level',
+}
+export const eventText = (text: string) => text.replace(/\b[A-Z]+(?:_[A-Z]+)+\b/g, term => eventTerms[term] ?? term)
