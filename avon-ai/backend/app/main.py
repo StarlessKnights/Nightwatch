@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import faults, messages
+from .decision import recommend
 from .models import AssetPatch, EngineRequest, FaultRequest, SpeedRequest
 from .scenarios import list_scenarios
 from .session import Session
@@ -200,13 +201,18 @@ def asset_diagnosis(asset_id: str):
 
 @app.get("/api/recommendation")
 async def get_recommendation():
-    rec = await asyncio.to_thread(session.recommendation)
-    session.note_advisory(rec)
-    return rec
+    run_id, revision = session.run_id, session.revision
+    # Capture the immutable simulation inputs before yielding to a worker.
+    rec = await asyncio.to_thread(recommend, session.state, session.topo, session.cfg, engine_enabled=session.engine_enabled)
+    if run_id == session.run_id and revision == session.revision:
+        session.note_advisory(rec)
+    return {**rec.model_dump(), "run_id": run_id}
 
 
 @app.post("/api/recommendation/{option_id:path}/approve")
-async def approve(option_id: str):
+async def approve(option_id: str, run_id: str):
+    if run_id != session.run_id:
+        raise HTTPException(409, "Recommendation belongs to an earlier simulation run")
     try:
         session.approve(option_id)
     except PermissionError as e:

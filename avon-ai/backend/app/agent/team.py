@@ -1,4 +1,4 @@
-"""One event-triggered investigation. Both specialists observe the same frozen plant snapshot."""
+"""One event-triggered investigation. All specialists observe the same frozen plant snapshot."""
 import asyncio
 import time
 from dataclasses import asdict, dataclass, field
@@ -115,11 +115,9 @@ class Investigation:
         self.workload = Report(WORKLOAD, settings.routine_model,
             "Compare modeled workload relief against cooling capacity. Confirm destination headroom and workload priorities before migration.", [])
         self.coordinator = Report(COORDINATOR, settings.reasoning_model, "", [], status="Awaiting handoffs")
-        self.scope = set(focus_assets or ctx.topo.nodes)
         for report in (self.flow, self.pump):
-            report.evidence_ids = [i for i in report.evidence_ids if ctx.evidence[i]["label"] in self.scope]
             report.focus_asset_ids = [ctx.evidence[i]["label"] for i in report.evidence_ids]
-        self.workload.focus_asset_ids = [a for a in self.scope if ctx.topo.kind(a) in ("source", "tank")]
+        self.workload.focus_asset_ids = sorted(a for a in self.scope if ctx.topo.kind(a) in ("source", "tank"))
         self.coordinator.focus_asset_ids = sorted(self.scope)
         self.events = []
         self.started = time.monotonic()

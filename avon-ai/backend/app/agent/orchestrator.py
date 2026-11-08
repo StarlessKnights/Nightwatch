@@ -228,7 +228,7 @@ class Agent:
             self.audit.record(ctx.run_id, "incident", primary)
         self.publish_context(ctx)
         self.audit.record(ctx.run_id, "investigation", team.snapshot())
-        self.record_activity("Coordinator brief ready", team.trigger)
+        self.record_activity("Incident Commander brief ready", team.trigger)
 
     def submit_chat(self, message):
         if not self.enabled:
@@ -270,7 +270,7 @@ class Agent:
                     # Copy the dated specialist reports into this chat's citation scope.
                     reports = [latest.handoff(ctx, r) for r in (latest.flow, latest.pump, latest.workload, latest.coordinator)]
                 try:
-                    answer = await self.gateway.analyze(ctx, "As the Coordinator, answer the operator: " + message,
+                    answer = await self.gateway.analyze(ctx, "As the Incident Commander, answer the operator: " + message,
                         {"evidence": readings if rundown else seed, "team_reports": reports, "as_of_min": ctx.state.t_min,
                         "previous_messages": [{"role": m["role"], "text": m.get("text", ""), "question": m.get("question")} for m in self.messages[-6:]]},
                         complex_task=True, activity=self.record_activity,

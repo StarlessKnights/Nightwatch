@@ -164,6 +164,10 @@ class Session:
     # ---------- commands ----------
     def inject_fault(self, type_: str, target: str, params: dict, end_min: int | None) -> Fault:
         merged = faults.validate(self.topo, type_, target, params)
+        if end_min is not None and end_min <= self.state.t_min:
+            raise ValueError("Fault end must be after the current simulation minute")
+        if type_ == "LEVEL_SENSOR_FAULT" and merged["transmitter"] not in self.state.tanks[target].level_sensors:
+            raise ValueError("Transmitter does not exist on this asset")
         if type_ == "LEVEL_SENSOR_FAULT" and merged.get("mode") == "stuck" and merged.get("value") is None:
             merged["value"] = self.state.tanks[target].level_sensors.get(merged["transmitter"]) or 0.0
         self._fault_seq += 1
@@ -419,6 +423,7 @@ class Session:
         if asset_id not in self.topo.nodes:
             raise KeyError(asset_id)
         out = dict(impact(self.topo, asset_id))
-        tths = {t: f["time_to_HH"] for t, f in self.forecast.items() if f["time_to_HH"] is not None}
+        connected = {asset_id, *out["upstream"], *out["downstream"]}
+        tths = {t: f["time_to_HH"] for t, f in self.forecast.items() if t in connected and f["time_to_HH"] is not None}
         out["first_to_limit"] = min(tths, key=tths.get) if tths else None
         return out

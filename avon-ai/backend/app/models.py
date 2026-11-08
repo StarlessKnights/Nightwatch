@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
@@ -15,9 +15,9 @@ class _M(BaseModel):
 
 
 class TimeCfg(_M):
-    dt_min: int
-    horizon_min: int
-    forecast_series_step_min: int
+    dt_min: int = Field(gt=0)
+    horizon_min: int = Field(gt=0)
+    forecast_series_step_min: int = Field(gt=0)
 
 
 class Limits(_M):

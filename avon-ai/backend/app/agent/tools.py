@@ -44,19 +44,6 @@ def tool_schemas():
 
 def validate_fault(spec, state, topo):
     params = faults.validate(topo, spec.type, spec.target, spec.params)
-    catalog = faults.FAULT_CATALOG[spec.type]["params"]
-    if set(spec.params) - set(catalog):
-        raise ValueError("Unknown fault parameters")
-    for key, rule in catalog.items():
-        value = params[key]
-        if "options" in rule:
-            if value not in rule["options"]:
-                raise ValueError(f"Invalid {key}")
-        elif value is not None:
-            if type(value) not in (int, float) or not rule["min"] <= value <= rule["max"]:
-                raise ValueError(f"{key} is outside the supported range")
-        elif rule.get("default") is not None:
-            raise ValueError(f"{key} is required")
     if spec.type == "LEVEL_SENSOR_FAULT":
         if params["transmitter"] not in state.tanks[spec.target].level_sensors:
             raise ValueError("Transmitter does not exist")
@@ -80,10 +67,10 @@ class Context:
         self.audit = audit
         self.evidence, self.proposals, self.scenarios, self.hypotheses = {}, [], [], []
         self._rec = None
-        self._prefix = uuid4().hex[:12]
 
     def fact(self, source, path, value, label=None):
-        identity = f"{self._prefix}-{len(self.evidence) + 1}"
+        # Several specialist tools can create evidence on worker threads at once.
+        identity = uuid4().hex
         row = {"id": identity, "run_id": self.run_id, "revision": self.revision,
                "t_min": self.state.t_min, "source": source, "path": path,
                "label": label or path, "value": copy.deepcopy(value)}
