@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Background, Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Background, Handle, Position, ReactFlow, type Edge, type Node, type NodeChange, type NodeProps } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { api } from '../api'
 import type { Envelope, Network } from '../types'
@@ -63,7 +63,7 @@ function PumpNode({ data }: NodeProps<Node<D>>) {
       <H />
       <div className={`pump ${cls}`} title={`${p.run_state}${p.limited_by ? ` (limited by ${p.limited_by})` : ''} · double-click for detail`}>
         {data.node.id.replace('P-', 'P')}
-        <button className="info nodrag" title="Pump detail" onClick={(e) => { e.stopPropagation(); data.onDetails?.(data.node.id) }}>ⓘ</button>
+        <button className="info nodrag" title="Pump detail" aria-label={`View ${data.node.id} details`} onClick={(e) => { e.stopPropagation(); data.onDetails?.(data.node.id) }}>ⓘ</button>
       </div>
       <div className="sub">{!p.available ? 'UNAVAILABLE' : p.run_state === 'STOPPED' && p.role === 'standby' ? 'STANDBY' : p.run_state}</div>
       {d?.w_est != null && (
@@ -113,6 +113,22 @@ function edgeFlow(env: Envelope, from: string, to: string, fromKind: string): nu
 }
 
 export function NetworkDiagram({ env, network, onPumpDetail, incidentAssets = [] }: { env: Envelope; network: Network; onPumpDetail: (id: string) => void; incidentAssets?: string[] }) {
+  // React Flow clears handle bounds when controlled nodes lose `measured`.
+  // Carry dimensions across telemetry updates so edges are not unmounted.
+  const [dimensions, setDimensions] = useState<Record<string, { width: number; height: number }>>({})
+  const onNodesChange = useCallback((changes: NodeChange<Node<D>>[]) => {
+    setDimensions(previous => {
+      let next = previous
+      for (const change of changes) {
+        if (change.type !== 'dimensions' || !change.dimensions) continue
+        const current = previous[change.id]
+        if (current?.width === change.dimensions.width && current?.height === change.dimensions.height) continue
+        if (next === previous) next = { ...previous }
+        next[change.id] = change.dimensions
+      }
+      return next
+    })
+  }, [])
   const container = useRef<HTMLDivElement>(null)
   const refit = useRef<() => void>(() => {})
   useEffect(() => {
@@ -130,7 +146,7 @@ export function NetworkDiagram({ env, network, onPumpDetail, incidentAssets = []
   const inFocus = (id: string) => !focus || focus.id === id || focus.related.has(id)
 
   const nodes: Node<D>[] = network.topology.nodes.map((n) => ({
-    id: n.id, type: n.type, draggable: false,
+    id: n.id, type: n.type, draggable: false, measured: dimensions[n.id],
     className: incidentAssets.includes(n.id) ? 'incident-node' : '',
     position: { x: n.ui.col * COL_W, y: n.ui.row * ROW_H },
     data: { node: n, env, network, dim: !inFocus(n.id), onDetails: onPumpDetail },
@@ -142,7 +158,8 @@ export function NetworkDiagram({ env, network, onPumpDetail, incidentAssets = []
     const dim = !(inFocus(e.from) && inFocus(e.to))
     const affected = !transfer && incidentAssets.includes(e.from) && incidentAssets.includes(e.to)
     return {
-      id: `${e.from}-${e.to}`, source: e.from, target: e.to, animated: live,
+      id: `${e.from}-${e.to}`, source: e.from, target: e.to,
+      className: transfer ? undefined : `plant-flow-edge ${live ? 'flow-live' : ''}`,
       label: transfer ? 'buffer transfer' : live ? `${flow.toFixed(0)} bbl/hr` : undefined,
       style: { stroke: affected ? 'var(--warn)' : live ? 'var(--flow)' : 'var(--idle)', strokeWidth: affected ? 3 : live ? 2.5 : 1.5, strokeDasharray: live ? undefined : '5 5', opacity: dim ? 0.2 : live ? 1 : 0.6 },
       labelStyle: { fill: 'var(--text)', fontSize: 11 }, labelBgStyle: { fill: 'var(--panel)' },
@@ -155,7 +172,7 @@ export function NetworkDiagram({ env, network, onPumpDetail, incidentAssets = []
   }
 
   return (
-    <div ref={container} style={{ height: '100%', width: '100%' }}><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.1 }}
+    <div ref={container} style={{ height: '100%', width: '100%' }}><ReactFlow nodes={nodes} onNodesChange={onNodesChange} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.1 }}
       onInit={view => { refit.current = () => { void view.fitView({padding: 0.1}) } }}
       nodesConnectable={false} proOptions={{ hideAttribution: true }} onNodeClick={onClick} onPaneClick={() => setFocus(null)}
       minZoom={0.3} colorMode="dark" zoomOnDoubleClick={false}
