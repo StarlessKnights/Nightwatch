@@ -1,13 +1,23 @@
 #include "hal_peripherals.h"
 
+static const char* pumpNameForDev(uint8_t d) {
+  if (d == 1) return "P-201";
+  if (d == 2) return "P-203";
+  return "P-204";
+}
+
 void HalPeripherals::begin() {
   // Initialize Modulino I2C communication on the UNO R4 WiFi Qwiic port (Wire1)
   Modulino.begin();
 
+  // Start with target pump defaulting to this board's assigned ID
+  targetDev = DEVICE_ID;
+  telemetry.targetDev = targetDev;
+
   // Non-blocking auto-probe for each daisy-chained Modulino module
   hasModulinoKnob = modulinoKnob.begin();
   if (hasModulinoKnob) {
-    // Set knob scale starting at 100 (100% health = 1000‰)
+    telemetry.hasKnob = true;
     modulinoKnob.set(100);
     lastKnobPos = 100;
     telemetry.knob = 1000;
@@ -28,9 +38,38 @@ void HalPeripherals::begin() {
   }
 }
 
-void HalPeripherals::sampleSensors(PumpState pumpState) {
-  // 1. Modulino Knob: Controls wear / throttle (0 to 100 -> 0 to 1000‰)
+void HalPeripherals::sampleSensors(unsigned long now, PumpState pumpState) {
+  // 1. Modulino Knob: Push-to-cycle target pump, rotate to set wear/health
   if (hasModulinoKnob) {
+    // Detect click / push-down on rotary encoder knob
+    if (modulinoKnob.isPressed()) {
+      // Cycle target pump channel: 1 (P-201) -> 2 (P-203) -> 3 (P-204) -> 1 ...
+      targetDev = (targetDev % 3) + 1;
+      targetSwitchedMs = now;
+      telemetry.targetDev = targetDev;
+
+      // Restore and synchronize this target pump's last saved wear setting
+      int saved = pumpKnobPos[targetDev];
+      modulinoKnob.set(saved);
+      lastKnobPos = saved;
+      telemetry.knob = (uint16_t)(saved * 10);
+      telemetry.knobChanged = true;
+
+      // Audible feedback for channel switch: higher pitch for higher pump ID
+      if (hasModulinoBuzzer) {
+        modulinoBuzzer.tone(1000 + (targetDev * 400), 80);
+      }
+
+      // Visual feedback on Modulino Pixels
+      if (hasModulinoPixels) {
+        for (int i = 0; i < 8; i++) modulinoPixels.set(i, 0, 0, 0, 0);
+        if (targetDev == 1) { modulinoPixels.set(0, BLUE, 40); modulinoPixels.set(1, BLUE, 40); }
+        else if (targetDev == 2) { modulinoPixels.set(3, BLUE, 40); modulinoPixels.set(4, BLUE, 40); }
+        else if (targetDev == 3) { modulinoPixels.set(6, BLUE, 40); modulinoPixels.set(7, BLUE, 40); }
+        modulinoPixels.show();
+      }
+    }
+
     int pos = modulinoKnob.get();
     // Constrain position between 0 and 100
     if (pos < 0) {
@@ -41,14 +80,9 @@ void HalPeripherals::sampleSensors(PumpState pumpState) {
       modulinoKnob.set(100);
     }
 
-    // Clicking the knob resets wear to 100% (healthy)
-    if (modulinoKnob.isPressed()) {
-      pos = 100;
-      modulinoKnob.set(100);
-    }
-
     if (pos != lastKnobPos) {
       lastKnobPos = pos;
+      pumpKnobPos[targetDev] = pos;
       telemetry.knob = (uint16_t)(pos * 10); // scale 0..100 to 0..1000
       telemetry.knobChanged = true;
     }
@@ -87,20 +121,30 @@ void HalPeripherals::sampleSensors(PumpState pumpState) {
 
 void HalPeripherals::updateBuzzerAndLeds(unsigned long now, PumpState pumpState) {
   // Update Modulino Pixels indicator if attached
-  if (hasModulinoPixels && pumpState != lastPumpState) {
-    ModulinoColor col = GREEN;
-    int b = 25;
-    if (pumpState == PUMP_STOPPED) { col = WHITE; b = 10; }
-    else if (pumpState == PUMP_RUNNING) { col = (telemetry.knob < 500) ? YELLOW : GREEN; }
-    else if (pumpState == PUMP_STARTING) { col = BLUE; }
-    else if (pumpState == PUMP_DEGRADED) { col = YELLOW; }
-    else if (pumpState == PUMP_TRIPPED) { col = RED; b = 50; }
-    else if (pumpState == PUMP_UNAVAILABLE) { col = RED; b = 10; }
+  if (hasModulinoPixels) {
+    // If channel was recently switched, hold channel indicator for 1.2s
+    if (hasModulinoKnob && (uint32_t)(now - targetSwitchedMs) < 1200) {
+      // Pixels show channel: 1, 2, or 3
+      for (int i = 0; i < 8; i++) modulinoPixels.set(i, 0, 0, 0, 0);
+      if (targetDev == 1) { modulinoPixels.set(0, CYAN, 40); modulinoPixels.set(1, CYAN, 40); }
+      else if (targetDev == 2) { modulinoPixels.set(3, CYAN, 40); modulinoPixels.set(4, CYAN, 40); }
+      else if (targetDev == 3) { modulinoPixels.set(6, CYAN, 40); modulinoPixels.set(7, CYAN, 40); }
+      modulinoPixels.show();
+    } else if (pumpState != lastPumpState) {
+      ModulinoColor col = GREEN;
+      int b = 25;
+      if (pumpState == PUMP_STOPPED) { col = WHITE; b = 10; }
+      else if (pumpState == PUMP_RUNNING) { col = (telemetry.knob < 500) ? YELLOW : GREEN; }
+      else if (pumpState == PUMP_STARTING) { col = BLUE; }
+      else if (pumpState == PUMP_DEGRADED) { col = YELLOW; }
+      else if (pumpState == PUMP_TRIPPED) { col = RED; b = 50; }
+      else if (pumpState == PUMP_UNAVAILABLE) { col = RED; b = 10; }
 
-    for (int i = 0; i < 8; i++) {
-      modulinoPixels.set(i, col, b);
+      for (int i = 0; i < 8; i++) {
+        modulinoPixels.set(i, col, b);
+      }
+      modulinoPixels.show();
     }
-    modulinoPixels.show();
   }
 
   // Modulino Buzzer tones
@@ -147,7 +191,7 @@ void HalPeripherals::updateBuzzerAndLeds(unsigned long now, PumpState pumpState)
 void HalPeripherals::update(unsigned long now, PumpState pumpState) {
   if ((uint32_t)(now - lastSampleMs) >= 50) { // 20 Hz sensor sampling
     lastSampleMs = now;
-    sampleSensors(pumpState);
+    sampleSensors(now, pumpState);
   }
   updateBuzzerAndLeds(now, pumpState);
 }
@@ -164,8 +208,17 @@ void HalPeripherals::emitTelemetryIfDue(unsigned long now, uint8_t devId, const 
   Serial.print(devId);
   Serial.print(",\"pump\":\"");
   Serial.print(assignedPump);
-  Serial.print("\",\"online\":1,\"knob\":");
-  Serial.print(telemetry.knob);
+  Serial.print("\",\"online\":1");
+
+  if (hasModulinoKnob) {
+    Serial.print(",\"target_dev\":");
+    Serial.print(targetDev);
+    Serial.print(",\"target_pump\":\"");
+    Serial.print(pumpNameForDev(targetDev));
+    Serial.print("\",\"knob\":");
+    Serial.print(telemetry.knob);
+  }
+
   Serial.print(",\"temp\":");
   Serial.print(telemetry.temperature_c, 1);
   Serial.print(",\"light\":");

@@ -537,6 +537,9 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
         client = httpx.AsyncClient() if HAS_HTTPX else None
         last_sent_telemetry: Dict[int, dict] = {}
         last_sent_time: Dict[int, float] = {}
+        last_sent_knob: Dict[str, float] = {}
+        last_sent_knob_time: Dict[str, float] = {}
+        last_knob_target: Dict[int, int] = {}
 
         try:
             while not stop_event.is_set():
@@ -554,32 +557,55 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
                     if dev not in PUMPS:
                         continue
                     pump = pkt.get("pump") or PUMPS[dev]
+
+                    # Target pump selection from Modulino Knob
+                    target_dev = pkt.get("target_dev", dev)
+                    if target_dev not in PUMPS:
+                        target_dev = dev
+                    target_pump = pkt.get("target_pump") or PUMPS[target_dev]
+
+                    # Log whenever the operator clicks the knob to switch target pump
+                    if target_dev != last_knob_target.get(dev):
+                        last_knob_target[dev] = target_dev
+                        logger.info(f"[KNOB SELECT] Modulino Knob switched -> now controlling Pump {target_dev} ({target_pump})")
+
                     knob_raw = pkt.get("knob")
                     knob_factor = round(knob_raw / 1000.0, 3) if knob_raw is not None else None
                     temp_c = pkt.get("temp")
                     light = pkt.get("light")
 
+                    # 1. Dispatch knob wear setting to target pump
+                    if knob_factor is not None:
+                        last_k_val = last_sent_knob.get(target_pump, None)
+                        last_k_tx = last_sent_knob_time.get(target_pump, 0.0)
+                        k_delta = abs(knob_factor - last_k_val) if last_k_val is not None else 1.0
+                        if k_delta >= 0.015 or (now - last_k_tx >= 1.0):
+                            payload_knob = {
+                                "dev": target_dev,
+                                "pump": target_pump,
+                                "online": True,
+                                "knob": knob_factor,
+                                "telemetry": pkt
+                            }
+                            await post_hardware_status(client, payload_knob)
+                            last_sent_knob[target_pump] = knob_factor
+                            last_sent_knob_time[target_pump] = now
+
+                    # 2. Dispatch local board thermal & optical telemetry to its assigned pump
                     last_pkt = last_sent_telemetry.get(dev, {})
                     last_tx = last_sent_time.get(dev, 0.0)
-
-                    # Send if significant delta (>1.5% knob or >0.5C temp) or heartbeat >= 1.0s
-                    knob_delta = abs((knob_factor or 0) - (last_pkt.get("knob") or 0)) if knob_factor is not None else 0
                     temp_delta = abs((temp_c or 0) - (last_pkt.get("temp") or 0)) if temp_c is not None else 0
-                    significant = (knob_delta >= 0.015) or (temp_delta >= 0.5)
-                    due = significant or (now - last_tx >= 1.0)
-
-                    if due:
-                        payload = {
+                    if (temp_delta >= 0.5) or (now - last_tx >= 1.0):
+                        payload_local = {
                             "dev": dev,
                             "pump": pump,
                             "online": True,
-                            "knob": knob_factor,
                             "temperature_c": temp_c,
                             "light_level": light,
                             "telemetry": pkt
                         }
-                        await post_hardware_status(client, payload)
-                        last_sent_telemetry[dev] = {"knob": knob_factor, "temp": temp_c}
+                        await post_hardware_status(client, payload_local)
+                        last_sent_telemetry[dev] = {"temp": temp_c}
                         last_sent_time[dev] = now
 
                 await asyncio.sleep(0.04)  # 25 Hz check

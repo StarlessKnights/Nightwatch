@@ -100,6 +100,46 @@ void loop(){
   if((uint32_t)(now-lastFrame)>=300){lastFrame=now;fb.clear();static uint8_t corner=0;int xs[]={0,11,11,0},ys[]={0,0,7,7};fb.set(xs[corner],ys[corner]);corner=(corner+1)%4;matrix.loadPixels(&fb.pixels[0][0],96);}
 #else
   bool stale=!state.hasPacket||(uint32_t)(now-state.lastPacketMs)>=LINK_TIMEOUT_MS;
-  if((uint32_t)(now-lastFrame)>=FRAME_INTERVAL_MS){lastFrame=now;phase++;if(stale)diagnostic(now);else renderProfile(state,fb,now,phase);matrix.loadPixels(&fb.pixels[0][0],96);}
+  if((uint32_t)(now-lastFrame)>=FRAME_INTERVAL_MS){
+    lastFrame=now;
+    phase++;
+    if(stale) diagnostic(now);
+    else renderProfile(state,fb,now,phase);
+
+    // If target pump was recently switched via the Modulino knob, show P-1, P-2, or P-3 overlay for 1.2s
+    if(hal.hasKnob() && (uint32_t)(now - hal.getTargetSwitchedMs()) < 1200) {
+      fb.clear();
+      // Draw 'P'
+      fb.vline(1, 1, 6);
+      fb.hline(1, 4, 1);
+      fb.hline(1, 4, 4);
+      fb.vline(4, 1, 4);
+      // Draw '-'
+      fb.hline(5, 6, 4);
+      // Draw target number
+      uint8_t td = hal.getTargetDev();
+      if(td == 1) {
+        fb.vline(9, 1, 6);
+        fb.set(8, 2);
+        fb.hline(8, 10, 6);
+      } else if(td == 2) {
+        fb.hline(8, 10, 1);
+        fb.set(10, 2);
+        fb.set(10, 3);
+        fb.hline(8, 10, 4);
+        fb.set(8, 5);
+        fb.hline(8, 10, 6);
+      } else {
+        fb.hline(8, 10, 1);
+        fb.set(10, 2);
+        fb.hline(8, 10, 3);
+        fb.set(10, 4);
+        fb.set(10, 5);
+        fb.hline(8, 10, 6);
+      }
+    }
+
+    matrix.loadPixels(&fb.pixels[0][0],96);
+  }
 #endif
 }

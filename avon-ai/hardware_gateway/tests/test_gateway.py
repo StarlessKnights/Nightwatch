@@ -99,6 +99,28 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(pkt["knob"], 750)
         self.assertEqual(pkt["temp"], 38.2)
 
+    def test_upstream_single_knob_target_switching(self):
+        cfg = {"serial": {"active_devices": [1, 2, 3], "auto_detect": False}}
+        with patch("bridge.serial.tools.list_ports.comports", return_value=[]):
+            bus = FaultTolerantSerialBus(cfg)
+
+        from bridge import SerialPortLink
+        # Board 1 emits packet with target_dev=2 (P-203)
+        link = SerialPortLink(port="COM4", is_online=True, device_id=1)
+        fake = FakeSerial()
+        fake.rx_buffer.append(b'{"v":1,"dev":1,"pump":"P-201","online":1,"target_dev":2,"target_pump":"P-203","knob":450,"temp":24.5}\n')
+        link.ser = fake
+        bus.links["COM4"] = link
+
+        packets = bus.read_upstream_telemetry()
+        self.assertEqual(len(packets), 1)
+        pkt = packets[0]
+        self.assertEqual(pkt["dev"], 1)
+        self.assertEqual(pkt["pump"], "P-201")
+        self.assertEqual(pkt["target_dev"], 2)
+        self.assertEqual(pkt["target_pump"], "P-203")
+        self.assertEqual(pkt["knob"], 450)
+
     def test_packet_health_level_and_trip_priority(self):
         extractor = PumpStateExtractor({})
         state = {"pumps": {"P-201": {"run_state": "RUNNING", "eff_health": .499, "available": True}}, "tanks": {"T-101": {"volume": 200, "capacity": 1000}}}
