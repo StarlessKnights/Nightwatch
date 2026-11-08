@@ -66,7 +66,21 @@ class GatewayTests(unittest.TestCase):
         with patch("bridge.serial.Serial", side_effect=lambda port, *a, **kw: fake[port]):
             bus.connect_all()
         bus.broadcast_packet({"v": 1, "dev": 2, "pump": "P-203"})
-        self.assertEqual([len(fake[p].writes) for p in devices], [0, 0, 1])
+        # Every connected link receives the packet. Each firmware instance
+        # accepts only the packet matching its compiled DEVICE_ID.
+        self.assertEqual([len(fake[p].writes) for p in devices], [1, 1, 1])
+
+    def test_missing_pyserial_does_not_silently_enable_dry_run(self):
+        cfg = {"serial": {"active_devices": [1, 2, 3], "auto_detect": False}}
+        with patch("bridge.HAS_SERIAL", False):
+            bus = FaultTolerantSerialBus(cfg)
+            with self.assertRaisesRegex(RuntimeError, "pyserial is required"):
+                bus.connect_all()
+
+        with patch("bridge.HAS_SERIAL", False):
+            bus = FaultTolerantSerialBus(cfg, dry_run=True)
+            bus.connect_all()
+            self.assertTrue(bus.dry_run)
 
     def test_hello_v2_and_profiles(self):
         # v2 banners for 3 physical nodes

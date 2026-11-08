@@ -138,7 +138,7 @@ class FaultTolerantSerialBus:
         on_presence_change: Optional[Callable[[int, bool], None]] = None
     ):
         self.cfg = cfg
-        self.dry_run = dry_run or not HAS_SERIAL
+        self.dry_run = dry_run
         s_cfg = cfg.get("serial", {})
         self.baud = s_cfg.get("baud_rate", 115200)
         self.timeout = s_cfg.get("timeout_s", 0.05)
@@ -182,9 +182,11 @@ class FaultTolerantSerialBus:
             return
 
         if not HAS_SERIAL:
-            logger.warning("pyserial is not installed! Run: pip install pyserial. Switching to dry-run mode.")
-            self.dry_run = True
-            return
+            raise RuntimeError(
+                "pyserial is required for hardware mode. Install it with: "
+                "python -m pip install -r hardware_gateway/requirements-hw.txt "
+                "(or pass --dry-run explicitly)."
+            )
 
         logger.info(f"Probing and connecting Arduino serial ports: {list(self.links.keys())}...")
         for port, link in self.links.items():
@@ -287,7 +289,13 @@ class FaultTolerantSerialBus:
             pass
 
     def broadcast_packet(self, payload: dict) -> None:
-        """Transmit only to the Arduino identified by the packet device ID."""
+        """Broadcast a packet to every link; firmware filters on ``dev``.
+
+        USB enumeration and cached port identities are not reliable routing
+        primitives. Broadcasting the small NDJSON packets keeps every board's
+        input active and lets the firmware's compiled DEVICE_ID be the source
+        of truth.
+        """
         line = json.dumps(payload, separators=(',', ':')) + "\n"
         encoded = line.encode("utf-8")
 
@@ -295,10 +303,10 @@ class FaultTolerantSerialBus:
             logger.debug(f"[MOCK TX]: {line.strip()}")
             return
 
-        target_dev = payload.get("dev")
-        # Direct transmission to online matched board
+        # Broadcast to all online links; each firmware instance self-filters
+        # using its compiled DEVICE_ID.
         for port, link in list(self.links.items()):
-            if link.is_online and link.ser and link.device_id == target_dev:
+            if link.is_online and link.ser:
                 try:
                     link.ser.write(encoded)
                     link.ser.flush()
@@ -899,6 +907,17 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
     if not os.path.exists(config_path):
         logger.error(f"Config file not found: {config_path}")
         sys.exit(1)
+
+    if not dry_run and not HAS_SERIAL:
+        raise RuntimeError(
+            "pyserial is required for hardware mode. Install it with: "
+            "python -m pip install -r hardware_gateway/requirements-hw.txt"
+        )
+    if not HAS_WEBSOCKETS:
+        raise RuntimeError(
+            "websockets is required by the hardware gateway. Install it with: "
+            "python -m pip install -r hardware_gateway/requirements-hw.txt"
+        )
 
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = json.load(f)
