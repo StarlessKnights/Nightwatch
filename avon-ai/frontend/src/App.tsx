@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { AlarmList } from './components/AlarmList'
 import { EventLog } from './components/EventLog'
 import { FaultPanel } from './components/FaultPanel'
+import { CyberCommandCenter } from './components/CyberCommandCenter'
 import { WorkspaceDialog } from './components/WorkspaceDialog'
 import { money, clock } from './format'
 import { NetworkDiagram } from './components/NetworkDiagram'
@@ -23,6 +24,7 @@ export default function App() {
   const [alarmsOpen, setAlarmsOpen] = useState(false)
   const [activityOpen, setActivityOpen] = useState(false)
   const [faultsOpen, setFaultsOpen] = useState(false)
+  const [cyberOpen, setCyberOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
   const intelligence = useAgent(env?.state.run_id)
@@ -47,6 +49,7 @@ export default function App() {
     .sort((a, b) => a.time_to_HH! - b.time_to_HH!)[0]
   const forecastAge = Math.max(0, env.state.t_min - env.forecast.as_of_min)
   const minutesToShutdown = nextHighHigh ? Math.max(0, nextHighHigh.time_to_HH! - forecastAge) : null
+  const isAirgapActive = env.incident?.airgap_engaged || env.state?.airgap_engaged
 
   return (
     <div className="app plant-workspace">
@@ -54,6 +57,36 @@ export default function App() {
 
       <div className="attention-region">
         {!connected && <div className="connection-warning" role="status">Connection lost. Showing last received readings at T+{env.state.t_min} min. Reconnecting…</div>}
+        {isAirgapActive && (
+          <div style={{
+            background: 'rgba(239, 68, 68, 0.2)',
+            border: '1px solid #ef4444',
+            color: '#f85149',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontSize: '12px',
+            fontWeight: 700
+          }}>
+            <span>🔒 WINSTEAD ALERT: PHYSICAL AIR-GAP KILLSWITCH ENGAGED — EXTERNAL WAN ISOLATED</span>
+            <button
+              onClick={() => setCyberOpen(true)}
+              style={{
+                background: '#da3633',
+                color: '#fff',
+                border: 'none',
+                padding: '3px 10px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '11px'
+              }}
+            >
+              Open Incident Command
+            </button>
+          </div>
+        )}
         {error && <div className="workspace-error" role="alert">{error}<button onClick={() => run(async () => undefined)}>Dismiss</button></div>}
         <button className={`attention-strip ${topAlarm ? `priority-${topAlarm.priority}` : ''}`} onClick={() => setAlarmsOpen(true)} aria-haspopup="dialog">
           <span className="attention-symbol" aria-hidden="true">{topAlarm ? '!' : '✓'}</span>
@@ -81,6 +114,19 @@ export default function App() {
               </details>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                aria-haspopup="dialog"
+                style={{
+                  background: isAirgapActive ? '#da3633' : '#1f6feb',
+                  color: '#fff',
+                  border: `1px solid ${isAirgapActive ? '#f85149' : '#388bfd'}`,
+                  fontWeight: 600,
+                  boxShadow: isAirgapActive ? '0 0 8px rgba(218,54,51,0.5)' : undefined
+                }}
+                onClick={() => setCyberOpen(true)}
+              >
+                🛡️ Winstead Cyber Command {isAirgapActive ? '🔒' : ''}
+              </button>
               <button aria-haspopup="dialog" onClick={() => setFaultsOpen(true)}>🎛️ Hardware &amp; Faults</button>
               <button aria-expanded={inspectorOpen} aria-controls="plant-inspector" onClick={() => setInspectorOpen(!inspectorOpen)}>
                 {inspectorOpen ? 'Hide inspector' : 'Open inspector'}
@@ -197,6 +243,10 @@ export default function App() {
 
       <WorkspaceDialog open={faultsOpen} onClose={() => setFaultsOpen(false)} title="Hardware &amp; Fault Controls">
         <FaultPanel env={env} network={network} run={run} />
+      </WorkspaceDialog>
+
+      <WorkspaceDialog open={cyberOpen} onClose={() => setCyberOpen(false)} title="Winstead Cyber Incident Command">
+        <CyberCommandCenter env={env} run={run} onClose={() => setCyberOpen(false)} />
       </WorkspaceDialog>
 
       <footer className="footer">

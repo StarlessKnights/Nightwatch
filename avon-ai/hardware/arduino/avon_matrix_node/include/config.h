@@ -21,23 +21,25 @@
 #endif
 
 #if DEVICE_ID == 1
-constexpr char ASSIGNED_PUMP[] = "P-201";
+constexpr char NODE_PROFILE[] = "tank";
+constexpr char ASSIGNED_NAME[] = "T-101";
 #elif DEVICE_ID == 2
-constexpr char ASSIGNED_PUMP[] = "P-203";
+constexpr char NODE_PROFILE[] = "pump";
+constexpr char ASSIGNED_NAME[] = "CHP-1";
 #else
-constexpr char ASSIGNED_PUMP[] = "P-204";
+constexpr char NODE_PROFILE[] = "output";
+constexpr char ASSIGNED_NAME[] = "OUT-1";
 #endif
 
 constexpr unsigned long SERIAL_BAUD = 115200;
 constexpr unsigned long LINK_TIMEOUT_MS = 1500;
 constexpr unsigned long FRAME_INTERVAL_MS = 40;
-constexpr size_t INPUT_LINE_MAX = 192;
-constexpr char FIRMWARE_VERSION[] = "0.3.0-hil";
+constexpr size_t INPUT_LINE_MAX = 256;
+constexpr char FIRMWARE_VERSION[] = "2.0.0";
 
 // ============================================================================
 // Modular Peripheral Pin Assignments & Feature Toggles
 // ============================================================================
-// Any peripheral can be swapped, attached, or omitted without crashing.
 #ifndef PIN_KNOB
 #define PIN_KNOB A0         // Analog In: Manual throttle / wear potentiometer
 #endif

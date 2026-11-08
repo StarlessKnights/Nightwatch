@@ -30,4 +30,12 @@ export const api = {
   assetCurves: (id: string) => call<Curves>('GET', `/api/assets/${id}/curves`),
   assetDiagnosis: (id: string) => call<PumpDiagnosis>('GET', `/api/assets/${id}/diagnosis`),
   impact: (id: string) => call<{ upstream: string[]; downstream: string[]; first_to_limit: string | null }>('GET', `/api/impact/${id}`),
+  incidentStatus: () => call<Json>('GET', '/api/incident/status'),
+  incidentAirgap: (engaged: boolean, source = 'web_command_center') => call<Json>('POST', '/api/incident/airgap', { engaged, source }),
+  incidentScope: () => call<Record<string, Json>>('GET', '/api/incident/scope'),
+  updateScope: (asset: string, status: string, notes = '', actor = 'incident_commander') => call<Json>('POST', '/api/incident/scope', { asset, status, notes, actor }),
+  incidentComms: () => call<Json[]>('GET', '/api/incident/comms'),
+  postComms: (message: string, sender = 'Operator', role = 'incident_commander') => call<Json>('POST', '/api/incident/comms', { message, sender, role }),
+  incidentResponders: () => call<Json[]>('GET', '/api/incident/responders'),
+  addResponder: (name: string, role: string, badge?: string) => call<Json>('POST', '/api/incident/responders', { name, role, badge }),
 }

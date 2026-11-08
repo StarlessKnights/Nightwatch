@@ -33,11 +33,21 @@ export interface SimStateDto {
   faults: { id: string; type: string; target: string; params: Json; start_min: number; end_min: number | null; active: boolean }[]
   alarms: Alarm[]
   pending_actions: { id: string; kind: string; effective_at_min: number; label: string }[]
+  airgap_engaged?: boolean
 }
 
 export interface Payoff {
   option_id: string; label: string; approved_min: number
   do_nothing_cost: number; action_cost: number; savings: number
+}
+
+export interface IncidentStatus {
+  airgap_engaged: boolean
+  quarantined_egress: boolean
+  level: string
+  stage: string
+  responders_count: number
+  event_count: number
 }
 
 export interface Envelope {
@@ -50,6 +60,7 @@ export interface Envelope {
   forecast: { tanks: Record<string, TankForecast>; do_nothing: Record<string, number[]> | null; series_step_min: number; as_of_min: number }
   payoff: Payoff | null
   ledger: { loss: number; saved: number; net: number; breakdown: Record<string, number> }
+  incident?: IncidentStatus
 }
 
 export interface HistoryPoint { t: number; [tank: string]: number }

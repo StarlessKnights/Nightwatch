@@ -11,6 +11,7 @@ from . import actions as act
 from collections import deque
 
 from . import alarms, consequence, control, decision, diagnosis, faults, messages, pump_model
+from .cyber_incident import CyberIncidentManager
 from .forecast import rollout, tank_forecasts
 from .models import Config, Recommendation, load_config, patch_config
 from .network import Topology, impact, load_topology
@@ -31,6 +32,7 @@ class Session:
         self.speed = 1
         self.engine_enabled = True
         self.scenario_id = DEFAULT_SCENARIO
+        self.incident = CyberIncidentManager()
         self.load(DEFAULT_SCENARIO, announce=False)
 
     # ---------- lifecycle ----------
@@ -71,6 +73,7 @@ class Session:
         self.refresh_forecast()
 
     def reset(self) -> None:
+        self.incident.reset()
         self.load(self.scenario_id)
 
     def start_duty_pumps(self) -> None:
@@ -502,6 +505,7 @@ class Session:
                                 for p in s.pending_actions],
             "truck_withdrawals": len(s.truck_withdrawals),
             "hardware": self.get_hardware_summary(),
+            "airgap_engaged": self.incident.airgap_engaged,
         }
 
     def _envelope(self) -> dict:
@@ -513,6 +517,7 @@ class Session:
             "forecast": {"tanks": self.forecast, "do_nothing": self.forecast_do_nothing,
                          "series_step_min": self.cfg.time.forecast_series_step_min, "as_of_min": self.forecast_as_of_min},
             "payoff": self.payoff, "ledger": self.ledger_dict(),
+            "incident": self.incident.get_status(),
         }
 
     def tick_message(self) -> dict:

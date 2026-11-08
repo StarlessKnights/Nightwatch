@@ -1,10 +1,19 @@
+import asyncio
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from bridge import FaultTolerantSerialBus, HAS_SERIAL, PumpStateExtractor, parse_hello
+from bridge import (
+    FaultTolerantSerialBus,
+    HAS_SERIAL,
+    PumpStateExtractor,
+    parse_hello,
+    parse_hello_profile,
+    parse_hello_info,
+    handle_upstream_packet,
+)
 from demo_ui import perform_action
 
 
@@ -59,6 +68,33 @@ class GatewayTests(unittest.TestCase):
         bus.broadcast_packet({"v": 1, "dev": 2, "pump": "P-203"})
         self.assertEqual([len(fake[p].writes) for p in devices], [0, 0, 1])
 
+    def test_hello_v2_and_profiles(self):
+        # v2 banners for 3 physical nodes
+        self.assertEqual(parse_hello("AVON|HELLO|v=2|dev=1|profile=tank|fw=2.0.0|caps=matrix"), 1)
+        self.assertEqual(parse_hello("AVON|HELLO|v=2|dev=2|profile=pump|fw=2.0.0|caps=matrix,knob"), 2)
+        self.assertEqual(parse_hello("AVON|HELLO|v=2|dev=3|profile=output|fw=2.0.0|caps=matrix,buttons"), 3)
+
+        # parse_hello with include_profile
+        self.assertEqual(parse_hello("AVON|HELLO|v=2|dev=1|profile=tank|fw=2.0.0", include_profile=True), (1, "tank"))
+        self.assertEqual(parse_hello("AVON|HELLO|v=2|dev=2|profile=pump|fw=2.0.0", include_profile=True), (2, "pump"))
+        self.assertEqual(parse_hello("AVON|HELLO|v=2|dev=3|profile=output|fw=2.0.0", include_profile=True), (3, "output"))
+
+        # parse_hello_profile
+        self.assertEqual(parse_hello_profile("AVON|HELLO|v=2|dev=3|profile=output|fw=2.0.0"), "output")
+        self.assertEqual(parse_hello_profile("AVON|HELLO|v=1|dev=1|profile=cooling|fw=1.0.0"), "cooling")
+
+        # parse_hello_info
+        info = parse_hello_info("AVON|HELLO|v=2|dev=2|profile=pump|fw=2.0.0")
+        self.assertIsNotNone(info)
+        self.assertEqual(info["dev"], 2)
+        self.assertEqual(info["profile"], "pump")
+
+        # Invalid cases
+        self.assertIsNone(parse_hello("AVON|HELLO|v=3|dev=1|profile=tank"))
+        self.assertIsNone(parse_hello("AVON|HELLO|v=2|dev=4|profile=tank"))
+        self.assertIsNone(parse_hello("AVON|HELLO|v=2|dev=1|profile=unknown"))
+        self.assertIsNone(parse_hello("MALFORMED_LINE"))
+
     def test_presence_callback_on_connect_and_disconnect(self):
         events = []
         cfg = {"serial": {"active_devices": [1, 2, 3], "auto_detect": False, "macos_ports": {}}}
@@ -107,7 +143,6 @@ class GatewayTests(unittest.TestCase):
             bus = FaultTolerantSerialBus(cfg)
 
         from bridge import SerialPortLink
-        # Board 1 emits packet with target_dev=2 (P-203)
         link = SerialPortLink(port="COM4", is_online=True, device_id=1)
         fake = FakeSerial()
         fake.rx_buffer.append(b'{"v":1,"dev":1,"pump":"P-201","online":1,"target_dev":2,"target_pump":"P-203","knob":450,"temp":24.5}\n')
@@ -122,6 +157,121 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(pkt["target_dev"], 2)
         self.assertEqual(pkt["target_pump"], "P-203")
         self.assertEqual(pkt["knob"], 450)
+
+    def test_extract_tank_v2(self):
+        extractor = PumpStateExtractor({})
+        state = {
+            "tanks": {
+                "HALL-A": {"volume": 725.5, "capacity": 1000},
+                "T-104": {"volume": 850, "capacity": 1000}
+            },
+            "alarms": []
+        }
+        pkt = extractor.extract_tank(1, state)
+        self.assertEqual(pkt["v"], 2)
+        self.assertEqual(pkt["dev"], 1)
+        self.assertEqual(pkt["lvl"], 726)
+        self.assertEqual(pkt["cap"], 1000)
+        self.assertEqual(pkt["alarm"], 0)
+
+        # Alarm active in state
+        state["alarms"] = [{"tag": "HALL-A", "state": "ACTIVE_UNACK"}]
+        pkt_alarm = extractor.extract_tank(1, state)
+        self.assertEqual(pkt_alarm["alarm"], 1)
+
+        # Fallback to T-104 if HALL-A missing
+        state_fallback = {
+            "tanks": {"T-104": {"volume": 600, "capacity": 1000}},
+            "alarms": []
+        }
+        pkt_fallback = extractor.extract_tank(1, state_fallback)
+        self.assertEqual(pkt_fallback["lvl"], 600)
+        self.assertEqual(pkt_fallback["cap"], 1000)
+
+    def test_extract_duty_pump_v2(self):
+        extractor = PumpStateExtractor({})
+        # Running duty pump CHP-1 with healthy impeller
+        state = {
+            "pumps": {
+                "CHP-1": {"run_state": "RUNNING", "eff_health": 0.95, "flow": 210.4, "available": True}
+            },
+            "faults": []
+        }
+        pkt = extractor.extract_duty_pump(2, state)
+        self.assertEqual(pkt["v"], 2)
+        self.assertEqual(pkt["dev"], 2)
+        self.assertEqual(pkt["state"], 1)  # RUNNING
+        self.assertEqual(pkt["w"], 950)
+        self.assertEqual(pkt["flow"], 210.4)
+
+        # Degraded pump (w < 500)
+        state["pumps"]["CHP-1"]["eff_health"] = 0.42
+        pkt_degraded = extractor.extract_duty_pump(2, state)
+        self.assertEqual(pkt_degraded["state"], 3)  # DEGRADED
+        self.assertEqual(pkt_degraded["w"], 420)
+
+        # Tripped pump
+        state["faults"] = [{"type": "PUMP_TRIP", "target": "CHP-1", "active": True}]
+        pkt_tripped = extractor.extract_duty_pump(2, state)
+        self.assertEqual(pkt_tripped["state"], 4)  # TRIPPED
+
+        # Stopped pump
+        state["faults"] = []
+        state["pumps"]["CHP-1"]["run_state"] = "STOPPED"
+        pkt_stopped = extractor.extract_duty_pump(2, state)
+        self.assertEqual(pkt_stopped["state"], 0)  # STOPPED
+
+    def test_extract_output_v2(self):
+        extractor = PumpStateExtractor({})
+        state = {
+            "treatment": {
+                "TRT-1": {"flow": 315.6, "max_intake": 400.0}
+            },
+            "pipelines": {},
+            "airgap": 0,
+            "alarms": []
+        }
+        pkt = extractor.extract_output(3, state)
+        self.assertEqual(pkt["v"], 2)
+        self.assertEqual(pkt["dev"], 3)
+        self.assertEqual(pkt["flow"], 315.6)
+        self.assertEqual(pkt["max_flow"], 400.0)
+        self.assertEqual(pkt["airgap"], 0)
+        self.assertEqual(pkt["alarm"], 0)
+
+        # Airgap isolation engaged via incident
+        state["incident"] = {"airgap": True}
+        pkt_airgap = extractor.extract_output(3, state)
+        self.assertEqual(pkt_airgap["airgap"], 1)
+
+        # Local airgap override
+        extractor.local_airgap = 1
+        state["incident"] = {}
+        pkt_local_airgap = extractor.extract_output(3, state)
+        self.assertEqual(pkt_local_airgap["airgap"], 1)
+
+    def test_handle_upstream_airgap_killswitch(self):
+        extractor = PumpStateExtractor({})
+        current_state = {"airgap": 0, "pumps": {"CHP-1": {"run_state": "RUNNING"}}}
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=AsyncMock(status_code=200))
+
+        # Modulino Button A emits AIRGAP_KILLSWITCH
+        pkt = {"dev": 3, "evt": "AIRGAP_KILLSWITCH", "btn": "A"}
+        loop = asyncio.new_event_loop()
+        handled = loop.run_until_complete(
+            handle_upstream_packet(pkt, current_state, client=mock_client, api_url="http://127.0.0.1:8000", extractor=extractor)
+        )
+        loop.close()
+
+        self.assertTrue(handled)
+        self.assertEqual(extractor.local_airgap, 1)
+        self.assertEqual(current_state["airgap"], 1)
+        mock_client.post.assert_called_with(
+            "http://127.0.0.1:8000/api/incident/airgap",
+            json={"engaged": True, "source": "hardware_button_a"},
+            timeout=2.0
+        )
 
     def test_packet_health_level_and_trip_priority(self):
         extractor = PumpStateExtractor({})

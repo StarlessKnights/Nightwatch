@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import faults, messages
 from .models import AssetPatch, EngineRequest, FaultRequest, HardwareStatusRequest, SpeedRequest
+from .cyber_incident import AirgapRequest, CommsMessageRequest, ResponderCreateRequest, ScopeUpdateRequest, StageUpdateRequest
 from .scenarios import list_scenarios
 from .session import Session
 from .agent.orchestrator import Agent
@@ -363,3 +364,93 @@ async def agent_note(req: NoteRequest):
         raise HTTPException(503, "Note could not be stored")
     agent.record_activity("Maintenance note saved", req.asset_id)
     return {"id": identity}
+
+
+# ---------- Winstead Cyber Incident Command Routes ----------
+
+
+@app.get("/api/incident/status")
+def get_incident_status():
+    return session.incident.get_status()
+
+
+@app.post("/api/incident/airgap")
+async def post_incident_airgap(req: AirgapRequest):
+    res = session.incident.toggle_airgap(req.engaged, req.source)
+    await broadcast()
+    return res
+
+
+@app.get("/api/incident/scope")
+def get_incident_scope():
+    return session.incident.get_scope()
+
+
+@app.post("/api/incident/scope")
+async def post_incident_scope(req: ScopeUpdateRequest):
+    try:
+        res = session.incident.update_asset_scope(
+            asset=req.asset,
+            status=req.status,
+            notes=req.notes or "",
+            actor=req.actor or "operator",
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    await broadcast()
+    return res
+
+
+@app.get("/api/incident/comms")
+def get_incident_comms():
+    return session.incident.get_comms_feed()
+
+
+@app.post("/api/incident/comms")
+async def post_incident_comms(req: CommsMessageRequest):
+    try:
+        msg = session.incident.post_comms_message(
+            author=req.author,
+            role=req.role,
+            message=req.message,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    await broadcast()
+    return msg
+
+
+@app.post("/api/incident/responders")
+async def post_incident_responder(req: ResponderCreateRequest):
+    try:
+        resp = session.incident.add_responder(
+            name=req.name,
+            role=req.role,
+            verified=req.verified,
+            hardware_token=req.hardware_token,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    await broadcast()
+    return resp
+
+
+@app.get("/api/incident/responders")
+def get_incident_responders():
+    return session.incident.get_responders()
+
+
+@app.post("/api/incident/stage")
+async def post_incident_stage(req: StageUpdateRequest):
+    try:
+        res = session.incident.set_stage(req.stage, req.source)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    await broadcast()
+    return res
+
+
+@app.get("/api/incident/events")
+def get_incident_events(limit: int | None = None):
+    return session.incident.get_events(limit=limit)
+
