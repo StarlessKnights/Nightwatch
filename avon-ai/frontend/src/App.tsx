@@ -36,6 +36,7 @@ export default function App() {
         <button className="drawer-toggle" onClick={() => setDrawer(!drawer)}>{drawer ? '◀ Faults' : '▶ Faults'}</button>
         {drawer && <FaultPanel env={env} network={network} run={run} />}
         <div className="center"><NetworkDiagram key={env.state.run_id} env={env} network={network} onPumpDetail={setDetailId} incidentAssets={incidentAssets} /></div>
+      </div>
         <div className="right with-intelligence">
           <div className="right-top">
             {detailId
@@ -52,7 +53,6 @@ export default function App() {
           </div>
           <AlarmList env={env} run={run} />
         </div>
-      </div>
       <div className="bottom">
         <TankTrends env={env} network={network} history={history} rec={rec} selected={sel} />
         <EventLog events={events} />

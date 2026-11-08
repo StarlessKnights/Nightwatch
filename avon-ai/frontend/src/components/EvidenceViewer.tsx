@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Evidence, SourceRecord, ScenarioResult, ShiftBrief } from '../agentTypes'
+import type { Evidence, SourceRecord, ScenarioResult, ShiftBrief, TeamReport } from '../agentTypes'
 import { money, eventText, compactNumber as n } from '../format'
 import { OperatorDialog } from './OperatorDialog'
 import { sourceNames, evidenceLabel } from '../evidenceFormat'
@@ -71,8 +71,15 @@ function EvidenceBody({ e }: { e: Evidence }) {
   return <Fields value={e.value} name={e.path.split('.').at(-1)}/>
 }
 
-export function EvidenceViewer({ evidence: e, close }: { evidence: Evidence; close: () => void }) {
-  return <OperatorDialog title="Simulator evidence" close={close}><span className="eyebrow">{sourceNames[e.source] ?? 'Simulator observation'} · T+{e.t_min}</span><h2>{evidenceLabel(e)}</h2><EvidenceBody e={e}/>
+export function EvidenceViewer({ evidence: e, close, readings, inspect }: {
+  evidence: Evidence; close: () => void; readings: Record<string,Evidence>; inspect: (e: Evidence) => void
+}) {
+  const handoff = e.source === 'agent_handoff' ? e.value as TeamReport & {observed_at_min: number} : null
+  return <OperatorDialog title="Simulator evidence" close={close}><span className="eyebrow">{handoff ? 'Agent handoff' : sourceNames[e.source] ?? 'Simulator observation'} · T+{handoff?.observed_at_min ?? e.t_min}</span><h2>{evidenceLabel(e)}</h2>
+    {handoff ? <><small>{handoff.source} · {handoff.role}</small><p>{handoff.observation}</p>
+      {handoff.interpretations.map((finding,i) => <p key={i}>{finding.text}</p>)}
+      <div className="evidence-links">{handoff.evidence_ids.map(id => readings[id] &&
+        <button key={id} onClick={() => inspect(readings[id])}>{evidenceLabel(readings[id])}</button>)}</div></> : <EvidenceBody e={e}/>}
     <details className="provenance"><summary>Observation source</summary><dl className="field-list"><div><dt>Run</dt><dd>{e.run_id}</dd></div><div><dt>Revision</dt><dd>{e.revision}</dd></div><div><dt>Reading</dt><dd>{e.path}</dd></div></dl></details>
     <p className="hint">Recorded at T+{e.t_min}. Playback may have moved on.</p></OperatorDialog>
 }

@@ -31,6 +31,10 @@ cd backend && .venv/bin/python -m pytest         # 27 tests
 
 ## AVON Intelligence / Nemotron
 
+The **Agents** tab shows an investigation that starts automatically on a material change. The Inflow/Outflow Monitor reviews tank balance, source rates and discharge restrictions. The Pump Monitor reviews pump health, flow and standby readiness. Each specialist uses the configured routine model (default Nemotron 3.5 Lightning 30B-A3B). The Coordinator uses the reasoning model (default Nemotron 3.5 Super VL 120B-A12B) and receives both dated reports before briefing the operator. Ask can reference the latest completed investigation. If a role cannot obtain a validated model response, its report is labeled **Simulator rules**.
+
+**Demo:** Load Scene 2 (degraded duty pump), open **Agents → Expand**, and select each monitor to inspect its findings. Open **Handoff history** to see both deliveries before the Coordinator review. Open a source in the Coordinator report to trace it back to a specialist and its simulator readings. No chat message is needed to start the investigation.
+
 Open **AVON Intelligence → Brief** for shift handoff: the last 30 simulated minutes of measured tank volumes, recent changes, alarms needing acknowledgment, and the next forecast high-high crossing. Forecasts show the simulation minute they were calculated. **What-if lab** compares a hypothetical disruption to unchanged conditions at the same minute, showing time to high-high and modeled do-nothing cost. Neither forecast changes playback. In **Ask**, try “What changed this shift?” or investigate an incident with Nemotron. Evidence opens as recorded readings, charts and comparisons; historical source events retain their run and record IDs.
 
 Use **Decision Engine** to rank, inspect and approve feasible actions. Intelligence investigates changes and can propose alternatives for validation; it does not copy the engine’s top action into its proposal queue. The alarm strip above both views shows the highest-priority active alarm and opens the acknowledgment desk.

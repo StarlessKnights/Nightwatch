@@ -6,6 +6,7 @@ import { agentCall } from '../useAgent'
 import { evidenceLabel } from '../evidenceFormat'
 import { EvidenceViewer, SourceTimeline } from './EvidenceViewer'
 import { ShiftDesk, ScenarioCompare, WhatIfLab } from './ShiftDesk'
+import { AgentTeam } from './AgentTeam'
 
 interface Props {
   data: AgentState | null; error: string | null
@@ -15,7 +16,7 @@ interface Props {
 type History = { coverage: string; signals: { asset_id: string; observed_fault_events: number; interpretation: string; sources: SourceRecord[] }[]; notes: { id: string; run_id: string; at: string; data: { asset_id: string; text: string; provenance: string } }[] }
 
 export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) {
-  const [tab, setTab] = useState('Brief')
+  const [tab, setTab] = useState('Agents')
   const [notesSaved, setNotesSaved] = useState(0)
   const [input, setInput] = useState('')
   const [selectedEvidence, setSelectedEvidence] = useState<Evidence | null>(null)
@@ -50,13 +51,14 @@ export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) 
     setBusy(null)
   }
   return <div className="panel-fill intelligence">
-    <div className="intelligence-heading"><div><span className="eyebrow">INVESTIGATION DESK</span><h2>AVON Intelligence</h2><span className={`agent-status ${data.enabled ? 'online' : ''}`}>{data.status}</span></div>
+    <div className="intelligence-heading"><div><span className="eyebrow">Powered by Nemotron</span><h2>AVON Intelligence</h2><span className={`agent-status ${data.enabled ? 'online' : ''}`}>{data.status}</span></div>
       <label className="toggle"><input type="checkbox" checked={data.enabled} onChange={(e) => run('/enabled', { enabled: e.target.checked })} />Enabled</label></div>
     <p className="hint">{data.provider} · {data.last_observation_min == null ? 'Waiting for observation' : `observed T+${data.last_observation_min}`}</p>
     {data.provider === 'Deterministic fallback' && <p className="agent-notice">Nemotron offline · Shift handoff and what-if simulations are available.</p>}
     {(error || data.error || data.provider_error || data.audit_error) && <p role="alert" className="agent-notice warn">{error || data.error || data.provider_error || data.audit_error}</p>}
-    <nav className="intelligence-tabs" aria-label="Intelligence views">{['Brief', 'Incidents', 'What-if', 'Ask', 'Proposals', 'History'].map(name => <button key={name} aria-pressed={tab === name} className={tab === name ? 'on' : ''} onClick={() => setTab(name)}>{name}</button>)}</nav>
+    <nav className="intelligence-tabs" aria-label="Intelligence views">{['Agents', 'Brief', 'Incidents', 'What-if', 'Ask', 'Proposals', 'History'].map(name => <button key={name} aria-pressed={tab === name} className={tab === name ? 'on' : ''} onClick={() => setTab(name)}>{name}</button>)}</nav>
     <div key={tab} className="intel-body">
+    {tab === 'Agents' && <AgentTeam data={data} inspect={id => setSelectedEvidence(data.evidence[id] ?? null)} ask={() => setTab('Ask')}/>}
     {tab === 'Brief' && <ShiftDesk data={data} openIncidents={() => setTab('Incidents')} openLab={() => setTab('What-if')} />}
     {tab === 'What-if' && <WhatIfLab data={data} run={run} openEvidence={id => setSelectedEvidence(data.evidence[id] ?? null)} />}
 
@@ -114,6 +116,6 @@ export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) 
     </>}
 
     </div>
-    {selectedEvidence && <EvidenceViewer evidence={selectedEvidence} close={() => setSelectedEvidence(null)} />}
+    {selectedEvidence && <EvidenceViewer evidence={selectedEvidence} readings={data.evidence} inspect={setSelectedEvidence} close={() => setSelectedEvidence(null)} />}
   </div>
 }

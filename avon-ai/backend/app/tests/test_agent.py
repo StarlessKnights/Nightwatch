@@ -13,6 +13,7 @@ from app.agent.monitor import observe
 from app.agent.orchestrator import Agent
 from app.agent.settings import Settings
 from app.agent.tools import Context
+from app.agent.team import COORDINATOR, FLOW, PUMP
 from app.session import Session
 
 
@@ -23,6 +24,50 @@ def agent_setup(tmp_path):
     settings = Settings(audit_path=tmp_path / "audit.sqlite3", min_interval_s=1)
     agent = Agent(session, settings)
     return session, agent
+
+
+@pytest.mark.parametrize("pump_offline", [False, True])
+def test_specialists_parallel_then_coordinator_uses_both_reports(agent_setup, pump_offline):
+    session, original = agent_setup
+    settings = original.settings.model_copy(update={"api_key": Settings(api_key="test").api_key})
+    started = set()
+    both_started = asyncio.Event()
+    async def handler(request):
+        body = json.loads(request.content)
+        inputs = json.loads(body["messages"][1]["content"])
+        role = next(role for role in (FLOW, PUMP, COORDINATOR) if inputs["request"].startswith(f"You are the {role}."))
+        readings = inputs["observation"]["readings"]
+        if role == COORDINATOR:
+            assert body["model"] == settings.reasoning_model
+            assert [r["value"]["role"] for r in readings] == [FLOW, PUMP]
+            assert [r["value"]["source"] for r in readings] == ["Nemotron", "Simulator rules" if pump_offline else "Nemotron"]
+        else:
+            assert body["model"] == settings.routine_model and "tools" not in body
+            assert all(("state.pumps." in r["path"]) == (role == PUMP) for r in readings)
+            started.add(role)
+            if len(started) == 2:
+                both_started.set()
+            await asyncio.wait_for(both_started.wait(), timeout=3)
+            if pump_offline and role == PUMP:
+                return httpx.Response(401)
+        ids = [r["id"] for r in readings[:2]]
+        answer = {"evidence_ids": ids, "interpretations": [{"text": "Inspect the observed change.", "evidence_ids": ids}]}
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(answer)}}]})
+
+    agent = Agent(session, settings, Gateway(settings, original.audit, httpx.MockTransport(handler)))
+    async def run():
+        signature, groups = observe(session)
+        await agent.analyze_observation(Context(session, agent.audit), groups, signature)
+        await agent.model_task
+        team = agent.snapshot()["team"]
+        assert [e["status"] for e in team["events"]] == ["Reviewing", "Reviewing", "Delivered", "Delivered", "Reviewing", "Brief ready"]
+        assert team["reports"][-1]["source"] == "Nemotron"
+        assert not agent.messages and not session.state.pending_actions
+        for report in team["reports"]:
+            assert all(id in agent.evidence for id in report["evidence_ids"])
+        session.reset()
+        assert agent.snapshot()["team"] is None
+    asyncio.run(run())
 
 
 def test_tools_cannot_actuate_or_see_future_faults(agent_setup):
