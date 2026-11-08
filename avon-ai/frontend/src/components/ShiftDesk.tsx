@@ -15,7 +15,7 @@ export function TrendChart({ trend }: { trend: Trend }) {
   return <figure className="trace"><svg role="img" aria-label={trend.tank + ': observed stored heat from ' + n(first.bbl) + ' to ' + n(last.bbl) + ' kWh'} viewBox="0 0 300 48" preserveAspectRatio="none">
     <path d="M0 44H300 M0 24H300 M0 4H300" stroke="var(--grid)" strokeDasharray="3 5" fill="none" />
     <polyline points={line} fill="none" stroke="var(--aqua)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-  </svg><figcaption><span>T+{first.t} · {n(first.bbl)} bbl</span><span>T+{last.t} · {n(last.bbl)} bbl</span></figcaption></figure>
+  </svg><figcaption><span>T+{first.t} · {n(first.bbl)} kWh</span><span>T+{last.t} · {n(last.bbl)} kWh</span></figcaption></figure>
 }
 
 export function Handoff({ brief }: { brief: ShiftBrief }) {
@@ -27,7 +27,7 @@ export function Handoff({ brief }: { brief: ShiftBrief }) {
     <h2>{brief.unacknowledged ? brief.unacknowledged + (brief.unacknowledged === 1 ? ' alarm needs' : ' alarms need') + ' acknowledgment' : limit ? limit.tank + ' is first to the high-high limit' : 'No high-high crossing forecast'}</h2>
     <p className="hint">{limit ? limit.tank + ' · high-high level forecast at T+' + n(limit.at_min) : 'No hall reaches high-high in the ' + brief.horizon_min + '-minute forecast'}. Forecast from T+{brief.forecast_as_of}.</p>
     {trend && <div className="trend-block"><div className="section-line"><span className="eyebrow">Observed stored heat</span><select aria-label="Observed hall" value={trend.tank} onChange={e => choose(e.target.value)}>{brief.trends.map(t => <option key={t.tank}>{t.tank}</option>)}</select></div>
-      <strong>{signed(trend.change_bbl)} <small>bbl</small></strong><TrendChart trend={trend} /></div>}
+      <strong>{signed(trend.change_bbl)} <small>kWh</small></strong><TrendChart trend={trend} /></div>}
     <details className="brief-events"><summary>Recent changes · {brief.recent_events.length}</summary>
       {brief.recent_events.map(e => <p className="time-row" key={e.id}><time>T+{e.t_min}</time><span>{eventText(e.text)}</span></p>)}
       {!brief.recent_events.length && <p className="hint">No fault, alarm, operator or automatic events in the observed window.</p>}</details>

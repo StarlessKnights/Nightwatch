@@ -4,9 +4,9 @@ Reviewed: 2026-11-07. This is a design review, not an implemented feature. Obtai
 
 ## Current system
 
-The repository is a synthetic produced-water network simulator. Its existing “AVON AI” recommendations are deterministic; there is no model integration, autonomous agent, conversational interface, or persistent incident store.
+The repository is a synthetic data center cooling plant simulator (NIGHTWATCH). Its existing recommendations are deterministic; there is no model integration, autonomous agent, conversational interface, or persistent incident store.
 
-The topology contains 11 assets: two sources, three tanks, three pumps, two pipelines, and one shared treatment facility. LOAD-A feeds HALL-A through duty CHP-1 / standby CHP-2 and LOOP-A; LOAD-B feeds HALL-B through CHP-3 and LOOP-B. Both pipelines terminate at HRJ-1. TES-1 is a buffer connected to HALL-B by a transfer edge. That edge participates in impact tracing but does not transfer liquid in the physics engine.
+The topology contains 11 assets: two IT heat-load sources, two hall thermal masses plus a TES buffer, three chilled-water pumps, two chilled-water loops, and one shared heat-rejection plant. LOAD-A feeds HALL-A through duty CHP-1 / standby CHP-2 and LOOP-A; LOAD-B feeds HALL-B through CHP-3 and LOOP-B. Both pipelines terminate at HRJ-1. TES-1 is a buffer connected to HALL-B by a transfer edge. That edge participates in impact tracing but does not transfer heat in the physics engine.
 
 The default simulation step is one minute; the forecast horizon is 480 minutes. Playback supports 1, 10, and 60 simulated minutes per real second. All configured costs and limits are illustrative.
 
