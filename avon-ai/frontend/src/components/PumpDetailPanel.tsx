@@ -17,7 +17,7 @@ function Curve({ curves, qmax }: { curves: Curves; qmax: number }) {
         <LineChart data={rows} margin={{ top: 8, right: 16, bottom: 18, left: 0 }}>
           <CartesianGrid stroke="var(--grid)" />
           <XAxis dataKey="Q" type="number" domain={[0, qmax]} stroke="var(--muted)" tick={{ fontSize: 11 }}
-            label={{ value: 'flow (bbl/hr)', position: 'insideBottom', offset: -10, fill: 'var(--muted)', fontSize: 11 }} />
+            label={{ value: 'flow (kW)', position: 'insideBottom', offset: -10, fill: 'var(--muted)', fontSize: 11 }} />
           <YAxis stroke="var(--muted)" tick={{ fontSize: 11 }} width={40}
             label={{ value: 'head', angle: -90, position: 'insideLeft', fill: 'var(--muted)', fontSize: 11 }} />
           <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)' }} />
@@ -75,12 +75,12 @@ export function PumpDetailPanel({ id, env, network, onClose }: { id: string; env
         <>
           <div className="diag">
             <div><b>{d?.text ?? '…'}</b></div>
-            <div className="hint">w_est {d?.w_est?.toFixed(2) ?? '—'} · r_est {d?.r_est?.toFixed(2) ?? '—'} · flow {pump.Q.toFixed(0)} bbl/hr · P {pump.P.toFixed(1)}</div>
+            <div className="hint">w_est {d?.w_est?.toFixed(2) ?? '—'} · r_est {d?.r_est?.toFixed(2) ?? '—'} · flow {pump.Q.toFixed(0)} kW · P {pump.P.toFixed(1)}</div>
           </div>
           {hist && data.length > 0 ? (
             <TimeSeriesStack data={data} events={hist.events} startClock={network.config.ui.start_clock} height={150}
               panels={[
-                { title: 'Flow', unit: 'bbl/hr', domain: [0, 'auto'], series: [{ key: 'Q', label: 'flow', color: 'var(--flow)' }, { key: 'expected', label: 'expected (healthy pump)', color: 'var(--muted)', dash: '4 4', faint: true }] },
+                { title: 'Flow', unit: 'kW', domain: [0, 'auto'], series: [{ key: 'Q', label: 'flow', color: 'var(--flow)' }, { key: 'expected', label: 'expected (healthy pump)', color: 'var(--muted)', dash: '4 4', faint: true }] },
                 { title: 'Discharge pressure', unit: 'head', domain: [0, 'auto'], series: [{ key: 'P', label: 'pressure', color: 'var(--warn)' }] },
               ]} />
           ) : <div className="hint pad">Collecting samples…</div>}

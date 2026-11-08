@@ -30,7 +30,7 @@ def allocate(
     pipeline_cap: dict, pipeline_r: dict, treatment_cap: dict, source_rate: dict, dt_h: float,
     outflow_multiplier: float = 1.0,
 ) -> FlowResult:
-    """All rates in bbl/hr. source_rate is already net of curtailment/shut-in.
+    """All rates in kW. source_rate is already net of curtailment/shut-in.
 
     pump demand = operating_point(w, s, r) of each running pump, then scaled by pipeline cap (shared by pumps on
     that pipeline), then treatment intake (shared across pipelines proportional to demand), then by

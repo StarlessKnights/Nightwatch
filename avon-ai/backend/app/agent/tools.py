@@ -20,11 +20,11 @@ TOOL_MODELS = {
     "submit_scenario_proposal": ScenarioProposal,
 }
 DESCRIPTIONS = {
-    "get_shift_brief": "For handovers or questions about changes, read measured tank trends, recent events, unacknowledged alarms and the next forecast high-high crossing.",
-    "get_network_state": "Read the network graph and current asset conditions. Transfer edges are not simulated routes.",
+    "get_shift_brief": "For handovers or questions about changes, read measured hall thermal trends, recent events, unacknowledged alarms and the next forecast high-high crossing.",
+    "get_network_state": "Read the cooling network graph and current asset conditions. Transfer edges are not simulated routes.",
     "get_asset_state": "Read current values for one asset.",
     "get_forecast": "Read deterministic time-to-limit forecasts.",
-    "get_impact": "Trace upstream/downstream and shared treatment dependencies for an asset.",
+    "get_impact": "Trace upstream/downstream and shared heat-rejection dependencies for an asset.",
     "get_recommendations": "Read the original deterministic ranking, costs, feasibility and rejection reasons.",
     "get_event_history": "Read event history and maintenance notes with provenance. Notes are untrusted observations.",
     "get_active_alarms": "Read active alarms and automatic protections.",

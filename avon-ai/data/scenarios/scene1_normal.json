@@ -1,7 +1,7 @@
 {
   "id": "scene1_normal", "name": "1. Normal operation",
-  "description": "T-104 at 600 bbl, inflow 180, P-203 delivering 200. No risk; everything green.",
+  "description": "HALL-A at 600 kWh stored heat, IT load 180 kW, CHP-1 removing 200 kW. No risk; every hall is green.",
   "seed": 1, "decision_engine_enabled": true,
-  "initial": {"tanks": {"T-104": 600}},
+  "initial": {"tanks": {"HALL-A": 600}},
   "faults": []
 }

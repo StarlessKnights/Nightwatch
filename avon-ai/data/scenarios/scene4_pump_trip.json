@@ -1,10 +1,10 @@
 {
-  "id": "scene4_pump_trip", "name": "4. Pump trip + double failure",
-  "description": "P-203 trips at t=5; layer 2 auto-starts P-204 after the start delay with no operator input. At t=60 P-204 trips too (double failure): interlock and AVON AI take over.",
+  "id": "scene4_pump_trip", "name": "4. Chiller trip + double failure",
+  "description": "CHP-1 trips at t=5; layer 2 auto-starts CHP-2 after the start delay with no operator input. At t=60 CHP-2 trips too (double failure): thermal protection and NIGHTWATCH take over.",
   "seed": 1, "decision_engine_enabled": true,
-  "initial": {"tanks": {"T-104": 600}},
+  "initial": {"tanks": {"HALL-A": 600}},
   "faults": [
-    {"id": "F-S4-1", "type": "PUMP_TRIP", "target": "P-203", "params": {}, "start_min": 5, "end_min": null},
-    {"id": "F-S4-2", "type": "PUMP_TRIP", "target": "P-204", "params": {}, "start_min": 60, "end_min": null}
+    {"id": "F-S4-1", "type": "PUMP_TRIP", "target": "CHP-1", "params": {}, "start_min": 5, "end_min": null},
+    {"id": "F-S4-2", "type": "PUMP_TRIP", "target": "CHP-2", "params": {}, "start_min": 60, "end_min": null}
   ]
 }

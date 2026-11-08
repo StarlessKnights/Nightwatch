@@ -3,9 +3,9 @@ import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Too
 import { clock } from '../format'
 import type { Envelope, HistoryPoint, Network, Option, Recommendation } from '../types'
 
-interface Props { env: Envelope; network: Network; history: HistoryPoint[]; rec: Recommendation | null; selected: Option | null }
+interface Props { visible?: boolean; env: Envelope; network: Network; history: HistoryPoint[]; rec: Recommendation | null; selected: Option | null }
 
-export function TankTrends({ env, network, history, rec, selected }: Props) {
+export function TankTrends({ env, network, history, rec, selected, visible = true }: Props) {
   const tanks = Object.keys(env.state.tanks).filter((t) => !env.state.tanks[t].role)
   const [tank, setTank] = useState(tanks[0])
   const lim = network.config.limits
@@ -27,7 +27,7 @@ export function TankTrends({ env, network, history, rec, selected }: Props) {
   return (
     <div className="panel-fill">
       <div className="panel-head">
-        <h3>Tank trends</h3>
+        <h3>Hall trends</h3>
         <div className="seg">{tanks.map((t) => <button key={t} className={t === tank ? 'on' : ''} onClick={() => setTank(t)}>{t}</button>)}</div>
         <div className="legend">
           <span style={{ color: 'var(--flow)' }}>━ history</span> <span style={{ color: 'var(--warn)' }}>┅ forecast (as-is)</span>
@@ -35,7 +35,7 @@ export function TankTrends({ env, network, history, rec, selected }: Props) {
           {selected && <span style={{ color: 'var(--ok)' }}> ┅ with “{selected.label}”</span>}
         </div>
       </div>
-      <ResponsiveContainer width="100%" height="85%">
+      {visible && <ResponsiveContainer width="100%" height="85%">
         <LineChart data={data} margin={{ top: 8, right: 24, bottom: 0, left: 0 }}>
           <CartesianGrid stroke="var(--grid)" />
           <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={(t) => clock(t, startClock)} stroke="var(--muted)" tick={{ fontSize: 11 }} />
@@ -51,7 +51,7 @@ export function TankTrends({ env, network, history, rec, selected }: Props) {
           <Line dataKey="noaction" stroke="var(--crit)" strokeDasharray="2 4" dot={false} isAnimationActive={false} connectNulls />
           <Line dataKey="option" stroke="var(--ok)" strokeDasharray="6 4" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
         </LineChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer>}
     </div>
   )
 }

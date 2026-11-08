@@ -21,7 +21,7 @@ def production_loss(curtailed_bbl: float, cfg: Config) -> float:
 
 def trajectory_consequence(trips: dict, overflows: dict, tank_rates: dict, cfg: Config) -> float:
     """Expected consequence of a rollout. `trips`/`overflows` are event counts per tank;
-    `tank_rates` the nominal inflow (bbl/hr) feeding each tank. Deterministic, so expected == actual."""
+    `tank_rates` the nominal inflow (kW) feeding each tank. Deterministic, so expected == actual."""
     total = 0.0
     for tank, n in trips.items():
         total += n * shutin_cost(tank_rates.get(tank, 0.0), cfg)
