@@ -11,7 +11,7 @@ export function TransportBar({ env, network, connected, run }: Props) {
   const speeds: number[] = network.config.ui.speeds
   return (
     <header className="transport">
-      <div className="plant-identity"><div className="brand">AVON AI</div><span>Plant overview</span></div>
+      <div className="plant-identity"><div className="brand">AVON AI</div><span>Produced-water operations</span></div>
       <div className="connection"><span className={`dot ${connected ? 'ok' : 'bad'}`} />{connected ? 'Connected' : 'Reconnecting'}</div>
       <div className="clock"><span>Simulation time</span>{env.state.clock} <small>T+{env.state.t_min} min</small></div>
       <div className="spacer" />

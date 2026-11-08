@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AlarmList } from './components/AlarmList'
 import { EventLog } from './components/EventLog'
 import { WorkspaceDialog } from './components/WorkspaceDialog'
-import { money } from './format'
+import { money, clock } from './format'
 import { NetworkDiagram } from './components/NetworkDiagram'
 import { PumpDetailPanel } from './components/PumpDetailPanel'
 import { Recommendations } from './components/Recommendations'
@@ -18,6 +18,7 @@ import './workspace.css'
 export default function App() {
   const { network, env, history, events, rec, connected, error, run } = useSim()
   const [inspectorOpen, setInspectorOpen] = useState(true)
+  const [trendsOpen, setTrendsOpen] = useState(true)
   const [alarmsOpen, setAlarmsOpen] = useState(false)
   const [activityOpen, setActivityOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -38,6 +39,13 @@ export default function App() {
     || Number(b.state === 'ACTIVE_UNACK') - Number(a.state === 'ACTIVE_UNACK')
     || b.raised_min - a.raised_min)[0]
 
+  const shutInTanks = Object.entries(env.state.tanks).filter(([, tank]) => tank.interlock.tripped).map(([id]) => id)
+  const nextHighHigh = Object.values(env.forecast.tanks)
+    .filter(forecast => forecast.time_to_HH != null)
+    .sort((a, b) => a.time_to_HH! - b.time_to_HH!)[0]
+  const forecastAge = Math.max(0, env.state.t_min - env.forecast.as_of_min)
+  const minutesToShutdown = nextHighHigh ? Math.max(0, nextHighHigh.time_to_HH! - forecastAge) : null
+
   return (
     <div className="app plant-workspace">
       <TransportBar env={env} network={network} connected={connected} run={run} />
@@ -52,10 +60,16 @@ export default function App() {
         </button>
       </div>
       <main className={`plant-main ${inspectorOpen ? '' : 'inspector-collapsed'}`}>
-        <section className="graph-workspace" aria-label="Plant network">
-          <div className="workspace-heading"><div><h1>Plant network</h1><span className="hint">Select equipment to trace its connections</span></div><button aria-expanded={inspectorOpen} aria-controls="plant-inspector" onClick={() => setInspectorOpen(!inspectorOpen)}>{inspectorOpen ? 'Hide inspector' : 'Open inspector'}</button></div>
+        <section className="graph-workspace" aria-label="Produced-water network">
+          <div className="workspace-heading"><div><h1>Produced-water network</h1><span className="hint">Oilfield saltwater collection and treatment</span></div><button aria-expanded={inspectorOpen} aria-controls="plant-inspector" onClick={() => setInspectorOpen(!inspectorOpen)}>{inspectorOpen ? 'Hide inspector' : 'Open inspector'}</button></div>
+          <ol className="process-stages" aria-label="Produced-water process"><li>Oilfield collection</li><li>Saltwater storage</li><li>Pumps &amp; pipelines</li><li>Treatment</li></ol>
+          <div className={`plant-outlook ${shutInTanks.length ? 'is-shut-in' : nextHighHigh ? 'is-at-risk' : 'is-normal'}`}>
+            <div><strong>{shutInTanks.length ? `Inflow shut in · ${shutInTanks.join(', ')}` : nextHighHigh ? `${nextHighHigh.tank} · inflow shutdown forecast in ${Math.ceil(minutesToShutdown!)} min` : 'No high-high crossing forecast'}</strong>
+            <span>{shutInTanks.length ? 'High-high protection has stopped oilfield inflow.' : nextHighHigh ? `High-high at ${clock(env.forecast.as_of_min + nextHighHigh.time_to_HH!, network.config.ui.start_clock)} shuts in inflow to protect against a spill.` : ''} Forecast at T+{env.forecast.as_of_min} min.</span></div>
+            {(nextHighHigh || shutInTanks.length > 0) && <button onClick={() => { setInspectorOpen(true); setDetailId(null); setShowIntelligence(false) }}>Compare responses</button>}
+          </div>
           <div className="graph-canvas"><NetworkDiagram key={env.state.run_id} env={env} network={network} onPumpDetail={id => { setDetailId(id); setInspectorOpen(true) }} incidentAssets={incidentAssets} /></div>
-          <div className="graph-caption"><span><i />Flow shown in bbl/hr</span><span>Double-click a pump for details</span></div>
+          <div className="graph-caption"><span><i />Saltwater flow in bbl/hr</span><span>Double-click a pump for details</span></div>
         </section>
         <aside id="plant-inspector" className="right with-intelligence" hidden={!inspectorOpen} aria-label="Plant inspector">
           <div className="right-top">
@@ -75,9 +89,11 @@ export default function App() {
           </div>
         </aside>
       </main>
-      <section className="trends-region" aria-label="Trends and activity">
-        <div className="trends-toolbar"><span>Measured history and forecast</span><button aria-haspopup="dialog" onClick={() => setActivityOpen(true)}>Activity · {events.length}</button></div>
-        <TankTrends env={env} network={network} history={history} rec={rec} selected={sel} />
+      <section className={`trends-region ${trendsOpen ? '' : 'trends-collapsed'}`} aria-label="Trends and activity">
+        <div className="trends-toolbar"><span>Measured history and forecast</span><div className="trends-actions"><button aria-expanded={trendsOpen} aria-controls="tank-trends" onClick={() => setTrendsOpen(!trendsOpen)}>{trendsOpen ? 'Hide trends' : 'Show trends'}</button><button aria-haspopup="dialog" onClick={() => setActivityOpen(true)}>Activity · {events.length}</button></div></div>
+        <div id="tank-trends" className="trends-content" hidden={!trendsOpen}>
+          <TankTrends visible={trendsOpen} env={env} network={network} history={history} rec={rec} selected={sel} />
+        </div>
       </section>
       <WorkspaceDialog open={alarmsOpen} onClose={() => setAlarmsOpen(false)} title="Plant alarms"><AlarmList env={env} run={run} /></WorkspaceDialog>
       <WorkspaceDialog open={activityOpen} onClose={() => setActivityOpen(false)} title="Plant activity">

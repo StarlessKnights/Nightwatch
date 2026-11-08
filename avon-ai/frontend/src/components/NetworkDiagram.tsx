@@ -22,7 +22,8 @@ function SourceNode({ data }: NodeProps<Node<D>>) {
   return (
     <div className={`nd source ${data.dim ? 'dim' : ''}`}>
       <H />
-      <b>{data.node.label}</b>
+      <b>{data.node.id}</b>
+      <div className="asset-purpose">Oilfield collection</div>
       <div className="sub">{s.flow.toFixed(0)} bbl/hr</div>
       {s.eff_rate > s.rate && <div className="badge warn">surge ×{(s.eff_rate / s.rate).toFixed(2)}</div>}
       {s.curtailment_pct > 0 && <div className="badge">cut {s.curtailment_pct.toFixed(0)}%</div>}
@@ -34,17 +35,22 @@ function SourceNode({ data }: NodeProps<Node<D>>) {
 function TankNode({ data }: NodeProps<Node<D>>) {
   const t = data.env.state.tanks[data.node.id]
   const lim = data.network.config.limits
+  const forecast = data.env.forecast.tanks[data.node.id]
+  const highHigh = forecast?.time_to_HH
+  const remaining = highHigh == null ? null : Math.max(0, highHigh - Math.max(0, data.env.state.t_min - data.env.forecast.as_of_min))
   const pct = (v: number) => `${Math.min(100, (v / t.capacity) * 100)}%`
   return (
     <div className={`nd tank st-${t.status} ${data.dim ? 'dim' : ''}`}>
       <H />
-      <div className="tank-head"><b>{data.node.label}</b><span>{t.volume.toFixed(0)} bbl</span></div>
+      <div className="tank-head"><b>{data.node.id}</b><span>{t.volume.toFixed(0)} bbl</span></div>
+      <div className="asset-purpose">{t.role === 'buffer' ? 'Saltwater buffer' : 'Saltwater storage'}</div>
       <div className="bar">
         <div className="fill" style={{ height: pct(t.volume) }} />
         <div className="mark" style={{ bottom: pct(lim.H) }}><i>H</i></div>
         <div className="mark hh" style={{ bottom: pct(lim.HH) }}><i>HH</i></div>
       </div>
-      <div className="sub">in {t.inflow.toFixed(0)} / out {t.outflow.toFixed(0)}</div>
+      <div className="tank-readings"><span>{Math.max(0, t.capacity - t.volume).toFixed(0)} bbl free</span><span title={`Forecast at T+${data.env.forecast.as_of_min} min`}>{remaining == null ? 'No HH forecast' : `HH in ${Math.ceil(remaining)} min`}</span></div>
+      <div className="sub">In {t.inflow.toFixed(0)} / out {t.outflow.toFixed(0)} bbl/hr</div>
       {t.interlock.tripped && <div className="badge crit">🔒 HH interlock</div>}
       {t.interlock.ll_tripped && <div className="badge crit">LL trip</div>}
       {t.overflow_bbl > 0 && <div className="badge crit">OVERFLOW {t.overflow_bbl.toFixed(0)} bbl</div>}
@@ -83,6 +89,7 @@ function PipeNode({ data }: NodeProps<Node<D>>) {
     <div className={`nd pipe ${util > 0.98 ? 'st-warning' : ''} ${data.dim ? 'dim' : ''}`}>
       <H />
       <b>{data.node.label}</b>
+      <div className="asset-purpose">Saltwater pipeline</div>
       <div className="sub">{p.flow.toFixed(0)} / {p.cap.toFixed(0)} bbl/hr</div>
       {p.r > 1 && <div className="badge warn">restricted r={p.r.toFixed(1)}</div>}
     </div>
@@ -95,6 +102,7 @@ function TreatNode({ data }: NodeProps<Node<D>>) {
     <div className={`nd treat ${p.flow >= p.cap - FLOW_EPS ? 'st-warning' : ''} ${data.dim ? 'dim' : ''}`}>
       <H />
       <b>{data.node.label}</b>
+      <div className="asset-purpose">Produced-water treatment</div>
       <div className="sub">{p.flow.toFixed(0)} / {p.cap.toFixed(0)} bbl/hr</div>
       {p.intake_factor < 1 && <div className="badge warn">constrained {(p.intake_factor * 100).toFixed(0)}%</div>}
     </div>

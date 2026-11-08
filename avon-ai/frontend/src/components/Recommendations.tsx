@@ -29,7 +29,7 @@ export function Recommendations({ env, rec, selectedId, onSelect, run, disclaime
 
   return (
     <div className="panel-fill scroll">
-      <div className="engine-title"><span className="eyebrow">ACTION RANKING</span><h2>Decision Engine</h2><p className="hint">Compare feasible actions by simulated cost and time available. Approvals apply to this run.</p></div>
+      <div className="engine-title"><span className="eyebrow">Response options</span><h2>Decision Engine</h2><p className="hint">Compare responses to keep oilfield saltwater moving. Costs and high-high forecasts are modeled; approvals apply to this simulation run. Assessed at T+{rec.as_of_min} min.</p></div>
       <div className={`headline st-${rec.status}`}>
         <span className="chip">{rec.status.toUpperCase()}</span>
         <span>{rec.headline}</span>
@@ -47,14 +47,17 @@ export function Recommendations({ env, rec, selectedId, onSelect, run, disclaime
       )}
       {advisoryOn && ranked.map((o, i) => (
         <div key={o.action_id} className={`opt ${selectedId === o.action_id ? 'sel' : ''}`} onClick={() => onSelect(selectedId === o.action_id ? null : o.action_id)}>
+          {i === 0 && <div className="hint">Lowest modeled cost among feasible responses</div>}
           <div className="opt-top">
             <span className="rank">#{i + 1}</span>
             <b className="grow">{o.label}</b>
-            <span className="cost">{money(o.cost_breakdown.total)}</span>
+            <span className="cost"><small>Modeled cost</small>{money(o.cost_breakdown.total)}</span>
           </div>
           <Cost o={o} />
-          <div className="hint">margin {num(o.margin_bbl, 0)} bbl · lead {o.lead_time_min} min · act by {o.act_by_clock ?? '—'}</div>
-          <button className="primary" onClick={(e) => { e.stopPropagation(); run(() => api.approve(o.action_id)) }}>Approve</button>
+          <div className="response-timing"><span><small>Action deadline</small>{o.act_by_clock ?? 'No forecast deadline'}</span><span><small>Lead time</small>{o.lead_time_min} min</span><span><small>High-high margin</small>{num(o.margin_bbl, 0)} bbl</span></div>
+          {o.trajectory_summary && <p className="response-outcome">{Object.values(o.trajectory_summary).every(tank => tank.time_to_HH === null) ? 'No high-high crossing modeled with this response.' : 'High-high crossing remains in the modeled forecast.'}</p>}
+          {o.cost_breakdown.total != null && dn.cost_breakdown.total != null && <div className="hint">{dn.cost_breakdown.total >= o.cost_breakdown.total ? `${money(dn.cost_breakdown.total - o.cost_breakdown.total)} lower modeled cost than doing nothing` : `${money(o.cost_breakdown.total - dn.cost_breakdown.total)} higher modeled cost than doing nothing`}</div>}
+          <button className="primary" onClick={(e) => { e.stopPropagation(); run(() => api.approve(o.action_id)) }}>Approve in simulation</button>
         </div>
       ))}
       {advisoryOn && ranked.length === 0 && rec.status !== 'normal' && <div className="hint pad">No feasible action found.</div>}
