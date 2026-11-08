@@ -164,3 +164,14 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   .creator-credit { gap: 8px 14px; }
   .provider-signature { padding-left: 14px; }
 }
+
+.workspace-heading { align-items: flex-start; }
+.workspace-title { min-width: 0; }
+.network-context { color: var(--muted); font-size: 12px; }
+.network-context summary { width: fit-content; padding: 3px 0; }
+.network-context p { margin: 7px 0; }
+.network-context .process-stages { padding: 0; margin: 8px 0; }
+.network-context[open] { padding-bottom: 6px; }
+
+/* Keep the diagram grid quiet; all surrounding surfaces stay solid navy. */
+.graph-canvas .react-flow__background { opacity: .65; }
