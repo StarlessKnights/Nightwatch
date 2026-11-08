@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import type { AgentState, Evidence, Interpretation, SourceRecord } from '../agentTypes'
-import { money } from '../format'
 import { agentCall } from '../useAgent'
 
 import { evidenceLabel } from '../evidenceFormat'
@@ -45,18 +44,13 @@ export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) 
     setBusy(null)
     if (ok) { setInput(''); setTab('Ask') }
   }
-  const decide = async (id: string, decision: string) => {
-    setBusy(id)
-    await run(`/proposals/${id}/${decision}`, { run_id: data.run_id })
-    setBusy(null)
-  }
   return <div className="panel-fill intelligence">
     <div className="intelligence-heading"><div><span className="eyebrow">Powered by Nemotron</span><h2>NIGHTWATCH Intelligence</h2><span className={`agent-status ${data.enabled ? 'online' : ''}`}>{data.status}</span></div>
       <label className="toggle"><input type="checkbox" checked={data.enabled} onChange={(e) => run('/enabled', { enabled: e.target.checked })} />Enabled</label></div>
     <p className="hint">{data.provider} · {data.last_observation_min == null ? 'Waiting for observation' : `observed T+${data.last_observation_min}`}</p>
     {data.provider === 'Deterministic fallback' && <p className="agent-notice">Nemotron offline · Shift handoff and what-if simulations are available.</p>}
     {(error || data.error || data.provider_error || data.audit_error) && <p role="alert" className="agent-notice warn">{error || data.error || data.provider_error || data.audit_error}</p>}
-    <nav className="intelligence-tabs" aria-label="Intelligence views">{['Agents', 'Brief', 'Incidents', 'What-if', 'Ask', 'Proposals', 'History'].map(name => <button key={name} aria-pressed={tab === name} className={tab === name ? 'on' : ''} onClick={() => setTab(name)}>{name}</button>)}</nav>
+    <nav className="intelligence-tabs" aria-label="Intelligence views">{['Agents', 'Brief', 'Incidents', 'What-if', 'Ask', 'History'].map(name => <button key={name} aria-pressed={tab === name} className={tab === name ? 'on' : ''} onClick={() => setTab(name)}>{name}</button>)}</nav>
     <div key={tab} className="intel-body">
     {tab === 'Agents' && <AgentTeam data={data} inspect={id => setSelectedEvidence(data.evidence[id] ?? null)} ask={() => setTab('Ask')}/>}
     {tab === 'Brief' && <ShiftDesk data={data} openIncidents={() => setTab('Incidents')} openLab={() => setTab('What-if')} />}
@@ -78,21 +72,6 @@ export function IntelligencePanel({ data, error, run, onFocus, assets }: Props) 
         {incident.post_incident_summary && <p>{incident.post_incident_summary}</p>}
       </article>)}
       {data.hypotheses.map((h) => <article className="incident" key={h.id}><h4>Hypothesis: {h.fault.target} · {h.fault.type}</h4><p>{h.meaning}</p>{refs(h.evidence_ids)}</article>)}
-    </>}
-
-    {tab === 'Proposals' && <>
-      <p className="hint">Alternatives proposed during an investigation appear here. The Decision Engine validates them and checks conditions again at approval.</p>
-      {!data.proposals.length && <div className="agent-empty">No investigation proposals. Ranked actions are in the Decision Engine.</div>}
-      {[...data.proposals].reverse().map((proposal) => <article className="incident" key={proposal.id}>
-        <div className="opt-top"><span className={`tag tag-${proposal.status === 'APPROVED' || proposal.status === 'EXECUTED_IN_SIM' ? 'OPERATOR' : 'ADVISORY'}`}>{proposal.status === 'APPROVED' || proposal.status === 'EXECUTED_IN_SIM' ? 'OPERATOR' : 'ADVISORY'}</span><span className="chip">{proposal.status.replaceAll('_', ' ')}</span></div>
-        <h4>{proposal.option?.label ?? proposal.actions.map((a) => `${a.kind} ${a.target}`).join(' + ')}</h4>
-        <p className="hint">{proposal.origin === 'NEMOTRON' ? 'Nemotron proposal' : 'Decision engine fallback'} · validated at T+{proposal.t_min}</p>
-        {proposal.option && <><div className="agent-metrics"><span><small>Simulated cost</small>{money(proposal.option.cost_breakdown.total)}</span><span><small>HH margin</small>{proposal.option.margin_bbl ?? '—'} kWh</span><span><small>Lead time</small>{proposal.option.lead_time_min} min</span></div><p className="hint">Act by {proposal.option.act_by_clock ?? 'no predicted deadline'} · fixed {money(proposal.option.cost_breakdown.fixed)} · compute service impact {money(proposal.option.cost_breakdown.production_loss)}</p></>}
-        {proposal.reasons.map((reason, index) => <p className="reason" key={index}>{reason}</p>)}
-        {refs(proposal.evidence_ids)}
-        {proposal.status === 'VALIDATED' && <div className="agent-actions"><button className="primary" disabled={!!busy || !data.enabled} onClick={() => decide(proposal.id, 'approve')}>{busy === proposal.id ? 'Validating…' : 'Approve in simulation'}</button><button disabled={!!busy} onClick={() => decide(proposal.id, 'reject')}>Reject</button></div>}
-        {proposal.status === 'EXECUTED_IN_SIM' && <p className="hint">The simulator applied the scheduled effects. Equipment startup, ramping, or transport may still be in progress.</p>}
-      </article>)}
     </>}
 
     {tab === 'Ask' && <>
