@@ -79,6 +79,7 @@ class SerialPortLink:
     errors_caught: int = 0
     device_id: Optional[int] = None
     profile: Optional[str] = None
+    rx_buf: bytes = b""
 
 
 PUMPS = {1: "CHP-1", 2: "CHP-1", 3: "CHP-2"}
@@ -289,21 +290,15 @@ class FaultTolerantSerialBus:
         """Transmit only to the Arduino identified by the packet device ID."""
         line = json.dumps(payload, separators=(',', ':')) + "\n"
         encoded = line.encode("utf-8")
-        now = time.monotonic()
 
         if self.dry_run:
             logger.debug(f"[MOCK TX]: {line.strip()}")
             return
 
-        # Attempt reconnect on offline ports
-        for port, link in self.links.items():
-            if not link.is_online or link.ser is None:
-                if now - link.last_reconnect_attempt >= self.cooldown:
-                    self._try_connect(link)
-
-        # Isolated transmission
+        target_dev = payload.get("dev")
+        # Direct transmission to online matched board
         for port, link in list(self.links.items()):
-            if link.is_online and link.ser and link.device_id == payload.get("dev"):
+            if link.is_online and link.ser and link.device_id == target_dev:
                 try:
                     link.ser.write(encoded)
                     link.ser.flush()
@@ -321,7 +316,7 @@ class FaultTolerantSerialBus:
             if not link.is_online or not link.ser:
                 continue
             try:
-                while link.ser.in_waiting > 0:
+                while getattr(link.ser, "in_waiting", 0) > 0:
                     raw = link.ser.readline()
                     if not raw:
                         break
