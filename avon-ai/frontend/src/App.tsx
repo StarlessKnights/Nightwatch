@@ -59,31 +59,39 @@ export default function App() {
         {!connected && <div className="connection-warning" role="status">Connection lost. Showing last received readings at T+{env.state.t_min} min. Reconnecting…</div>}
         {isAirgapActive && (
           <div style={{
-            background: 'rgba(239, 68, 68, 0.2)',
-            border: '1px solid #ef4444',
-            color: '#f85149',
-            padding: '8px 16px',
-            borderRadius: '6px',
+            background: 'linear-gradient(90deg, rgba(80, 15, 35, 0.95), rgba(40, 10, 30, 0.95))',
+            border: '1px solid #f43f5e',
+            color: '#fecdd3',
+            padding: '8px 18px',
+            borderRadius: '10px',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             fontSize: '12px',
-            fontWeight: 700
+            fontWeight: 700,
+            fontFamily: 'var(--font-mono)',
+            boxShadow: '0 0 16px rgba(244, 63, 94, 0.4)'
           }}>
-            <span>🔒 WINSTEAD ALERT: PHYSICAL AIR-GAP KILLSWITCH ENGAGED — EXTERNAL WAN ISOLATED</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#f43f5e', fontSize: '14px' }}>🔒</span>
+              <span>WINSTEAD ALERT: PHYSICAL AIR-GAP KILLSWITCH ENGAGED — EXTERNAL WAN ISOLATED</span>
+            </span>
             <button
               onClick={() => setCyberOpen(true)}
               style={{
-                background: '#da3633',
+                background: 'linear-gradient(135deg, #e11d48, #be123c)',
                 color: '#fff',
                 border: 'none',
-                padding: '3px 10px',
-                borderRadius: '4px',
+                padding: '4px 14px',
+                borderRadius: '9999px',
                 cursor: 'pointer',
-                fontSize: '11px'
+                fontSize: '11px',
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                boxShadow: '0 0 10px rgba(225, 29, 72, 0.5)'
               }}
             >
-              Open Incident Command
+              OPEN INCIDENT COMMAND
             </button>
           </div>
         )}
@@ -113,23 +121,55 @@ export default function App() {
                 <p>Latest forecast at T+{env.forecast.as_of_min} min.</p>
               </details>
             </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
               <button
                 aria-haspopup="dialog"
                 style={{
-                  background: isAirgapActive ? '#da3633' : '#1f6feb',
+                  background: isAirgapActive
+                    ? 'linear-gradient(135deg, #be123c 0%, #e11d48 100%)'
+                    : 'linear-gradient(135deg, #7c3aed 0%, #9333ea 50%, #c026d3 100%)',
                   color: '#fff',
-                  border: `1px solid ${isAirgapActive ? '#f85149' : '#388bfd'}`,
-                  fontWeight: 600,
-                  boxShadow: isAirgapActive ? '0 0 8px rgba(218,54,51,0.5)' : undefined
+                  border: `1px solid ${isAirgapActive ? '#fda4af' : 'rgba(216, 180, 254, 0.5)'}`,
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  letterSpacing: '0.03em',
+                  borderRadius: '9999px',
+                  padding: '5px 16px',
+                  boxShadow: isAirgapActive ? '0 0 16px rgba(244, 63, 94, 0.6)' : '0 0 14px rgba(168, 85, 247, 0.45)'
                 }}
                 onClick={() => setCyberOpen(true)}
               >
-                🛡️ Winstead Cyber Command {isAirgapActive ? '🔒' : ''}
+                🛡️ WINSTEAD CYBER COMMAND {isAirgapActive ? '🔒' : ''}
               </button>
-              <button aria-haspopup="dialog" onClick={() => setFaultsOpen(true)}>🎛️ Hardware &amp; Faults</button>
-              <button aria-expanded={inspectorOpen} aria-controls="plant-inspector" onClick={() => setInspectorOpen(!inspectorOpen)}>
-                {inspectorOpen ? 'Hide inspector' : 'Open inspector'}
+              <button
+                aria-haspopup="dialog"
+                style={{
+                  background: 'rgba(36, 25, 69, 0.85)',
+                  border: '1px solid rgba(34, 211, 238, 0.4)',
+                  color: '#e0f2fe',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  borderRadius: '9999px',
+                  padding: '5px 14px'
+                }}
+                onClick={() => setFaultsOpen(true)}
+              >
+                🎛️ HARDWARE &amp; FAULTS
+              </button>
+              <button
+                aria-expanded={inspectorOpen}
+                aria-controls="plant-inspector"
+                style={{
+                  background: 'rgba(26, 18, 51, 0.7)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--muted)',
+                  fontSize: '12px',
+                  borderRadius: '9999px',
+                  padding: '5px 14px'
+                }}
+                onClick={() => setInspectorOpen(!inspectorOpen)}
+              >
+                {inspectorOpen ? 'HIDE INSPECTOR' : 'OPEN INSPECTOR'}
               </button>
             </div>
           </div>
