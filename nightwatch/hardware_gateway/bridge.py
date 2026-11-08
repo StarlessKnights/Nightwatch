@@ -897,7 +897,7 @@ async def handle_upstream_packet(
     return False
 
 
-async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = False) -> None:
+async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = False, port: Optional[int] = None) -> None:
     if verbose:
         logger.setLevel(logging.DEBUG)
 
@@ -910,6 +910,9 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
 
     ws_url = cfg.get("backend", {}).get("ws_url", "ws://127.0.0.1:8000/ws/sim")
     api_url = cfg.get("backend", {}).get("api_url", "http://127.0.0.1:8000").rstrip("/")
+    if port is not None:
+        ws_url = f"ws://127.0.0.1:{port}/ws/sim"
+        api_url = f"http://127.0.0.1:{port}"
     reconnect_delay = cfg.get("backend", {}).get("reconnect_interval_s", 2.0)
 
     # Queue for presence / status updates to backend
@@ -1105,12 +1108,13 @@ def main():
     parser.add_argument("--config", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json"), help="Path to config.json")
     parser.add_argument("--auto", action="store_true", help="Auto-detect connected Arduino serial ports")
     parser.add_argument("--v2", action="store_true", help="Enable v2 protocol compatibility")
+    parser.add_argument("--port", type=int, default=None, help="Backend port (e.g. 8080 or 8000)")
     parser.add_argument("--dry-run", action="store_true", help="Simulate serial writes without hardware Arduinos")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose debug logging")
     args = parser.parse_args()
 
     try:
-        asyncio.run(run_gateway(args.config, dry_run=args.dry_run, verbose=args.verbose))
+        asyncio.run(run_gateway(args.config, dry_run=args.dry_run, verbose=args.verbose, port=args.port))
     except KeyboardInterrupt:
         logger.info("Gateway stopped by operator.")
 
