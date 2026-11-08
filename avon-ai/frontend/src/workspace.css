@@ -148,3 +148,19 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .trends-content { display: flex; flex: 1; min-height: 0; }
 .trends-toolbar { flex-wrap: wrap; }
 .trends-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+
+/* Quiet creator and inference credits, using each identity's own accent. */
+.plant-workspace .footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 24px; padding-block: 12px; }
+.creator-credit { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 22px; }
+.creator-signature, .provider-signature { display: inline-flex; align-items: center; gap: 8px; }
+.credit-label { color: var(--muted); font-size: 11px; }
+.pericynthion-wordmark { display: inline-flex; align-items: center; gap: 6px; color: #edf4ff; font-size: 14px; font-weight: 500; letter-spacing: .025em; }
+.pericynthion-wordmark svg { width: 20px; height: 20px; color: #89b9ee; flex: none; }
+.provider-signature { border-left: 1px solid var(--border); padding-left: 22px; }
+.nemotron-wordmark { color: var(--text); font-size: 12px; }
+.nvidia-wordmark { color: #76b900; font-weight: 700; letter-spacing: .02em; }
+@media (max-width: 600px) {
+  .plant-workspace .footer { padding-inline: 14px; }
+  .creator-credit { gap: 8px 14px; }
+  .provider-signature { padding-left: 14px; }
+}

@@ -102,7 +102,13 @@ export default function App() {
         <details className="loss-breakdown"><summary>Loss breakdown</summary><dl>{Object.entries(env.ledger.breakdown).map(([label, value]) => <div key={label}><dt>{label.replaceAll('_', ' ')}</dt><dd>{money(value)}</dd></div>)}</dl></details>
         <EventLog events={events} />
       </WorkspaceDialog>
-      <footer className="footer">⚠ {disclaimer}</footer>
+      <footer className="footer">
+        <span className="simulation-disclaimer">⚠ {disclaimer}</span>
+        <div className="creator-credit" aria-label="Created by Pericynthion. Powered by NVIDIA Nemotron.">
+          <span className="creator-signature"><span className="credit-label">Created by</span><span className="pericynthion-wordmark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 3.5a9.5 9.5 0 1 0 3 13.5A8 8 0 0 1 17.5 3.5Z" fill="currentColor" /><circle cx="19.5" cy="5" r="1.5" fill="currentColor" /></svg>Pericynthion</span></span>
+          <span className="provider-signature"><span className="credit-label">Powered by</span><span className="nemotron-wordmark"><span className="nvidia-wordmark">NVIDIA</span> Nemotron</span></span>
+        </div>
+      </footer>
     </div>
   )
 }
