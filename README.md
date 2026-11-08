@@ -2,6 +2,9 @@
 ## The Team: Pericynthion
 Ryan Nirmal, Maaz Kattangere, Manas Telikepalli, Avi Singa
 
+### Dislaimer: 
+Full hardware integration can be found in branch integration/main-plus-aviChanges-hardware
+
 ## Inspiration
 Our inspiration was derived from the growing number of service outages that have been on the rise recently stemming from the lack of communication and organization within systems internal to the largest data centers in the world.
 
