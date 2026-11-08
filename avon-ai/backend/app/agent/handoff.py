@@ -1,7 +1,20 @@
 """Read-only shift handoff from the current run; no inference or rollout on the polling path."""
 
-HANDOFF_TERMS = ("handoff", "handover", "shift", "what changed", "trend", "rundown", "run down",
-                 "overview", "plant status", "with the plant", "plant doing", "going on", "plant summary")
+HANDOFF_TERMS = (
+    "handoff",
+    "handover",
+    "shift",
+    "what changed",
+    "trend",
+    "rundown",
+    "run down",
+    "overview",
+    "plant status",
+    "with the plant",
+    "plant doing",
+    "going on",
+    "plant summary",
+)
 
 
 def operator_read(ctx):
@@ -25,13 +38,23 @@ def operator_read(ctx):
 
 def handoff_text(brief):
     count = brief["unacknowledged"]
-    parts = [f"At T+{brief['t_min']}, {count} {'alarm needs' if count == 1 else 'alarms need'} acknowledgment."]
+    parts = [
+        f"At T+{brief['t_min']}, {count} {'alarm needs' if count == 1 else 'alarms need'} acknowledgment."
+    ]
     if brief["trends"]:
         row = brief["trends"][0]
         if len(row["samples"]) > 1:
             delta = row["change_bbl"]
-            direction = f"rose {delta:g} kWh" if delta > 0 else f"fell {abs(delta):g} kWh" if delta < 0 else "was unchanged"
-            parts.append(f"{row['tank']} stored heat {direction} since T+{brief['from_min']}.")
+            direction = (
+                f"rose {delta:g} kWh"
+                if delta > 0
+                else f"fell {abs(delta):g} kWh"
+                if delta < 0
+                else "was unchanged"
+            )
+            parts.append(
+                f"{row['tank']} stored heat {direction} since T+{brief['from_min']}."
+            )
         else:
             parts.append("Only the initial hall readings are available.")
     if brief["recent_events"]:
@@ -47,16 +70,40 @@ def shift_brief(session):
     for tank in session.state.tanks:
         samples = [{"t": p["t"], "bbl": p[tank]} for p in points if tank in p]
         if samples:
-            trends.append({"tank": tank, "samples": samples,
-                           "change_bbl": round(samples[-1]["bbl"] - samples[0]["bbl"], 2)})
+            trends.append(
+                {
+                    "tank": tank,
+                    "samples": samples,
+                    "change_bbl": round(samples[-1]["bbl"] - samples[0]["bbl"], 2),
+                }
+            )
     trends.sort(key=lambda r: -abs(r["change_bbl"]))
-    limits = [(f["time_to_HH"], t) for t, f in session.forecast.items() if f["time_to_HH"] is not None]
+    limits = [
+        (f["time_to_HH"], t)
+        for t, f in session.forecast.items()
+        if f["time_to_HH"] is not None
+    ]
     crossing, tank = min(limits) if limits else (None, None)
     alarms = [a for a in session.state.alarms if a.state == "ACTIVE_UNACK"]
-    recent = [e for e in reversed(session.event_log) if now - 30 <= e["t_min"] <= now
-              and e["tag"] in ("FAULT", "AUTO", "OPERATOR", "ALARM")][:4]
-    return {"t_min": now, "run_id": session.run_id, "from_min": points[0]["t"] if points else now,
-            "trends": trends, "recent_events": recent, "unacknowledged": len(alarms),
-            "forecast_as_of": session.forecast_as_of_min, "horizon_min": session.cfg.time.horizon_min,
-            "first_limit": {"tank": tank, "at_min": round(session.forecast_as_of_min + crossing, 2)}
-            if tank is not None else None}
+    recent = [
+        e
+        for e in reversed(session.event_log)
+        if now - 30 <= e["t_min"] <= now
+        and e["tag"] in ("FAULT", "AUTO", "OPERATOR", "ALARM")
+    ][:4]
+    return {
+        "t_min": now,
+        "run_id": session.run_id,
+        "from_min": points[0]["t"] if points else now,
+        "trends": trends,
+        "recent_events": recent,
+        "unacknowledged": len(alarms),
+        "forecast_as_of": session.forecast_as_of_min,
+        "horizon_min": session.cfg.time.horizon_min,
+        "first_limit": {
+            "tank": tank,
+            "at_min": round(session.forecast_as_of_min + crossing, 2),
+        }
+        if tank is not None
+        else None,
+    }

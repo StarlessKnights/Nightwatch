@@ -1,4 +1,5 @@
 """Single bounded analysis worker, durable audit, proposals and operator interaction."""
+
 import asyncio
 import contextlib
 import re
@@ -8,8 +9,8 @@ from uuid import uuid4
 from .. import decision
 from .audit import Audit
 from .gateway import Gateway, GatewayError
-from .history import signals
 from .handoff import HANDOFF_TERMS, handoff_text, operator_read, shift_brief
+from .history import signals
 from .incidents import briefing
 from .monitor import observe
 from .proposals import ActionSpec, AgentAnswer
@@ -25,13 +26,21 @@ class Agent:
         self.gateway = gateway or Gateway(self.settings, self.audit)
         self.team = None
         # Isolate cooldowns so a failing specialist does not silence the coordinator or operator chat.
-        self.team_gateways = {role: Gateway(self.settings, self.audit, self.gateway.transport)
-                              for role in (FLOW, PUMP, WORKLOAD, COORDINATOR)}
+        self.team_gateways = {
+            role: Gateway(self.settings, self.audit, self.gateway.transport)
+            for role in (FLOW, PUMP, WORKLOAD, COORDINATOR)
+        }
         self.enabled = self.settings.enabled
         self.wake = asyncio.Event()
         self.worker = None
         self.run_id = session.run_id
-        self.incidents, self.proposals, self.activity, self.messages, self.scenarios = [], [], [], [], []
+        self.incidents, self.proposals, self.activity, self.messages, self.scenarios = (
+            [],
+            [],
+            [],
+            [],
+            [],
+        )
         self.hypotheses, self.evidence = [], {}
         self.signature = None
         self.last_model_at = 0.0
@@ -45,7 +54,12 @@ class Agent:
         self.last_observation = None
 
     def record_activity(self, title, detail=""):
-        item = {"id": uuid4().hex, "t_min": self.session.state.t_min, "title": title, "detail": detail}
+        item = {
+            "id": uuid4().hex,
+            "t_min": self.session.state.t_min,
+            "title": title,
+            "detail": detail,
+        }
         self.activity.append(item)
         self.activity = self.activity[-100:]
         self.audit.record(self.run_id, "activity", item)
@@ -72,16 +86,30 @@ class Agent:
             return
         for incident in self.incidents:
             if incident["status"] == "active":
-                self.audit.record(self.run_id, "incident_closed", {**incident, "status": "closed", "reason": "Scenario reset"})
+                self.audit.record(
+                    self.run_id,
+                    "incident_closed",
+                    {**incident, "status": "closed", "reason": "Scenario reset"},
+                )
         for proposal in self.proposals:
             if proposal["status"] in ("PENDING", "VALIDATED", "APPROVED"):
-                self.audit.record(self.run_id, "proposal", {**proposal, "status": "REJECTED", "reasons": ["Scenario reset"]})
+                self.audit.record(
+                    self.run_id,
+                    "proposal",
+                    {**proposal, "status": "REJECTED", "reasons": ["Scenario reset"]},
+                )
         self.run_id = self.session.run_id
         if self.model_task and not self.model_task.done():
             self.model_task.cancel()
         self.team = None
         self.last_observation = None
-        self.incidents, self.proposals, self.messages, self.scenarios, self.hypotheses = [], [], [], [], []
+        (
+            self.incidents,
+            self.proposals,
+            self.messages,
+            self.scenarios,
+            self.hypotheses,
+        ) = [], [], [], [], []
         self.evidence, self.signature, self.event_cursor = {}, None, 0
         self.last_model_at = 0
         self.pending_model = False
@@ -91,16 +119,31 @@ class Agent:
         for event in self.session.event_log:
             if event["id"] <= self.event_cursor:
                 continue
-            self.audit.record(self.run_id, "event", event, f"event:{self.run_id}:{event['id']}")
+            self.audit.record(
+                self.run_id, "event", event, f"event:{self.run_id}:{event['id']}"
+            )
             for proposal in self.proposals:
-                if proposal["status"] != "APPROVED" or event["id"] <= proposal.get("approved_event_id", 0):
+                if proposal["status"] != "APPROVED" or event["id"] <= proposal.get(
+                    "approved_event_id", 0
+                ):
                     continue
-                labels = [ActionSpec.model_validate(a).action().label for a in proposal["actions"]]
-                if event["code"] in ("ACTION_EFFECTIVE", "ACTION_SKIPPED") and event["params"].get("label") in labels:
+                labels = [
+                    ActionSpec.model_validate(a).action().label
+                    for a in proposal["actions"]
+                ]
+                if (
+                    event["code"] in ("ACTION_EFFECTIVE", "ACTION_SKIPPED")
+                    and event["params"].get("label") in labels
+                ):
                     outcomes = proposal.setdefault("outcomes", {})
                     outcomes[event["params"]["label"]] = event
                     if event["code"] == "ACTION_SKIPPED":
-                        proposal.update(status="REJECTED", reasons=["Scheduled action was skipped in simulation; inspect outcomes"])
+                        proposal.update(
+                            status="REJECTED",
+                            reasons=[
+                                "Scheduled action was skipped in simulation; inspect outcomes"
+                            ],
+                        )
                     elif len(outcomes) == len(labels):
                         proposal["status"] = "EXECUTED_IN_SIM"
                     self.audit.record(self.run_id, "proposal", proposal)
@@ -113,23 +156,45 @@ class Agent:
             self.evidence[identity] = evidence
             self.audit.record(ctx.run_id, "evidence", evidence, identity)
         for proposal in ctx.proposals:
-            if not any(p["id"] == proposal["id"] or (p.get("actions") == proposal["actions"] and p["status"] in ("PENDING", "VALIDATED", "APPROVED") ) for p in self.proposals):
+            if not any(
+                p["id"] == proposal["id"]
+                or (
+                    p.get("actions") == proposal["actions"]
+                    and p["status"] in ("PENDING", "VALIDATED", "APPROVED")
+                )
+                for p in self.proposals
+            ):
                 self.proposals.append(proposal)
-        for source, target in ((ctx.scenarios, self.scenarios), (ctx.hypotheses, self.hypotheses)):
+        for source, target in (
+            (ctx.scenarios, self.scenarios),
+            (ctx.hypotheses, self.hypotheses),
+        ):
             existing = {item["id"] for item in target}
             target.extend(item for item in source if item["id"] not in existing)
         self.scenarios, self.hypotheses = self.scenarios[-20:], self.hypotheses[-30:]
         self.proposals = self.proposals[-100:]
         # Retain all evidence referenced by the bounded visible collections.
         references = set()
+
         def scan(value):
             if isinstance(value, dict):
                 references.update(value.get("evidence_ids", []))
-                for v in value.values(): scan(v)
+                for v in value.values():
+                    scan(v)
             elif isinstance(value, list):
-                for v in value: scan(v)
-        scan([self.incidents, self.proposals, self.messages, self.scenarios, self.hypotheses,
-              self.team.snapshot() if self.team else {}])
+                for v in value:
+                    scan(v)
+
+        scan(
+            [
+                self.incidents,
+                self.proposals,
+                self.messages,
+                self.scenarios,
+                self.hypotheses,
+                self.team.snapshot() if self.team else {},
+            ]
+        )
         # A retained coordinator citation may refer to a handoff from an earlier cycle.
         todo = list(references)
         while todo:
@@ -139,7 +204,11 @@ class Agent:
                     if child not in references:
                         references.add(child)
                         todo.append(child)
-        self.evidence = {k: v for k, v in self.evidence.items() if k in references or k in ctx.evidence}
+        self.evidence = {
+            k: v
+            for k, v in self.evidence.items()
+            if k in references or k in ctx.evidence
+        }
         return True
 
     async def loop(self):
@@ -155,20 +224,31 @@ class Agent:
                     continue
                 self.collect_events()
                 signature, groups = observe(self.session)
-                due = self.pending_model and time.monotonic() - self.last_model_at >= self.settings.min_interval_s and not (self.model_task and not self.model_task.done())
+                due = (
+                    self.pending_model
+                    and time.monotonic() - self.last_model_at
+                    >= self.settings.min_interval_s
+                    and not (self.model_task and not self.model_task.done())
+                )
                 if signature == self.signature and not due:
                     continue
                 # Coalesce changes while an analysis is running; never build a tick backlog.
                 self.signature = signature
                 ctx = Context(self.session, self.audit)
-                self.record_activity("Meaningful change detected", ", ".join(r for g in groups for r in g["roots"]) or "Network recovered")
+                self.record_activity(
+                    "Meaningful change detected",
+                    ", ".join(r for g in groups for r in g["roots"])
+                    or "Network recovered",
+                )
                 await self.analyze_observation(ctx, groups, signature)
                 self.last_observation = ctx.state.t_min
                 self.error = None
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self.error = "Analysis unavailable; simulation and automatic protection continue"
+                self.error = (
+                    "Analysis unavailable; simulation and automatic protection continue"
+                )
                 self.record_activity("Agent fallback", self.error)
 
     async def analyze_observation(self, ctx, groups, signature):
@@ -177,23 +257,46 @@ class Agent:
             return
         matched = set()
         for item in new:
-            previous = next((i for i in self.incidents if i["status"] == "active" and i["id"] not in matched and
-                             (set(i["roots"]) & set(item["roots"]) or set(i["tanks"]) & set(item["tanks"]))), None)
+            previous = next(
+                (
+                    i
+                    for i in self.incidents
+                    if i["status"] == "active"
+                    and i["id"] not in matched
+                    and (
+                        set(i["roots"]) & set(item["roots"])
+                        or set(i["tanks"]) & set(item["tanks"])
+                    )
+                ),
+                None,
+            )
             if previous:
-                item.update(id=previous["id"], first_seen_min=previous["first_seen_min"])
+                item.update(
+                    id=previous["id"], first_seen_min=previous["first_seen_min"]
+                )
                 self.incidents.remove(previous)
             matched.add(item["id"])
             self.incidents.insert(0, item)
         for old in self.incidents:
             if old["status"] == "active" and old["id"] not in matched:
-                old.update(status="resolved", resolved_min=ctx.state.t_min,
-                           post_incident_summary="Observed conditions cleared. Review the retained evidence and automatic response history.")
+                old.update(
+                    status="resolved",
+                    resolved_min=ctx.state.t_min,
+                    post_incident_summary="Observed conditions cleared. Review the retained evidence and automatic response history.",
+                )
                 self.audit.record(ctx.run_id, "incident_resolved", old)
         self.incidents = self.incidents[:40]
-        trigger = "Condition change · " + ", ".join(r for group in groups for r in group["roots"]) if groups else "Network observation"
+        trigger = (
+            "Condition change · "
+            + ", ".join(r for group in groups for r in group["roots"])
+            if groups
+            else "Network observation"
+        )
         # Investigate the most urgent cluster; retain the other incidents in the desk.
         priority = {"critical": 3, "warning": 2, "watch": 1, "normal": 0}
-        primary = max(new, key=lambda item: priority.get(item["severity"], 0), default=None)
+        primary = max(
+            new, key=lambda item: priority.get(item["severity"], 0), default=None
+        )
         scope = primary["affected_assets"] if primary else None
         if primary:
             trigger = "Investigating · " + ", ".join(primary["roots"])
@@ -203,21 +306,31 @@ class Agent:
         self.publish_context(ctx)
         for item in new:
             self.audit.record(ctx.run_id, "incident", item)
-        if self.gateway.configured and (time.monotonic() - self.last_model_at < self.settings.min_interval_s or (self.model_task and not self.model_task.done())):
+        if self.gateway.configured and (
+            time.monotonic() - self.last_model_at < self.settings.min_interval_s
+            or (self.model_task and not self.model_task.done())
+        ):
             # Keep a lightweight periodic retry for the latest coalesced condition.
             self.pending_model = True
             return
         self.pending_model = False
         self.last_model_at = time.monotonic()
         if self.gateway.configured:
-            self.model_task = asyncio.create_task(self.review_team(ctx, team, signature, new))
+            self.model_task = asyncio.create_task(
+                self.review_team(ctx, team, signature, new)
+            )
         else:
             await self.review_team(ctx, team, signature, new)
 
     async def review_team(self, ctx, team, signature, incidents):
         def current():
-            return (self.enabled and self.team is team and self.session.run_id == ctx.run_id
-                    and observe(self.session)[0] == signature)
+            return (
+                self.enabled
+                and self.team is team
+                and self.session.run_id == ctx.run_id
+                and observe(self.session)[0] == signature
+            )
+
         await team.run(ctx, self.team_gateways, current, self.publish_context)
         if not current():
             return
@@ -236,8 +349,14 @@ class Agent:
         if self.chat_task and not self.chat_task.done():
             raise ValueError("An operator question is already being analyzed")
         self.reset_run()
-        entry = {"id": uuid4().hex, "role": "operator", "text": message, "t_min": self.session.state.t_min,
-                 "run_id": self.run_id, "evidence_ids": []}
+        entry = {
+            "id": uuid4().hex,
+            "role": "operator",
+            "text": message,
+            "t_min": self.session.state.t_min,
+            "run_id": self.run_id,
+            "evidence_ids": [],
+        }
         self.messages.append(entry)
         self.audit.record(self.run_id, "operator_question", entry)
         self.chat_task = asyncio.create_task(self.chat(message, self.run_id))
@@ -250,47 +369,127 @@ class Agent:
                     return
                 self.analyzing = True
                 ctx = Context(self.session, self.audit)
-                target = next((a for a in ctx.topo.nodes if a.lower() in message.lower()), None)
+                target = next(
+                    (a for a in ctx.topo.nodes if a.lower() in message.lower()), None
+                )
                 handover = any(term in message.lower() for term in HANDOFF_TERMS)
-                seed_tool = "get_shift_brief" if handover else "get_asset_state" if target else "get_forecast"
-                seed = await asyncio.to_thread(ctx.execute, seed_tool, {"asset_id": target} if seed_tool == "get_asset_state" else {})
-                rundown = handover and not target and not any(term in message.lower() for term in
-                    ("what if", "what happens", "simulate", "scenario", "propose", "alternative", "history"))
+                seed_tool = (
+                    "get_shift_brief"
+                    if handover
+                    else "get_asset_state"
+                    if target
+                    else "get_forecast"
+                )
+                seed = await asyncio.to_thread(
+                    ctx.execute,
+                    seed_tool,
+                    {"asset_id": target} if seed_tool == "get_asset_state" else {},
+                )
+                rundown = (
+                    handover
+                    and not target
+                    and not any(
+                        term in message.lower()
+                        for term in (
+                            "what if",
+                            "what happens",
+                            "simulate",
+                            "scenario",
+                            "propose",
+                            "alternative",
+                            "history",
+                        )
+                    )
+                )
                 readings = [seed]
                 if rundown:
                     if ctx.brief["trends"]:
                         readings.append(ctx.asset(ctx.brief["trends"][0]["tank"]))
                     if ctx.brief["recent_events"]:
                         event = ctx.brief["recent_events"][0]
-                        readings.append(ctx.fact("get_event_history", f"events.{event['id']}", event, event["text"]))
+                        readings.append(
+                            ctx.fact(
+                                "get_event_history",
+                                f"events.{event['id']}",
+                                event,
+                                event["text"],
+                            )
+                        )
                 source = "NEMOTRON"
                 latest = self.team
                 reports = []
-                if latest and latest.run_id == ctx.run_id and latest.coordinator.status == "Brief ready":
+                if (
+                    latest
+                    and latest.run_id == ctx.run_id
+                    and latest.coordinator.status == "Brief ready"
+                ):
                     # Copy the dated specialist reports into this chat's citation scope.
-                    reports = [latest.handoff(ctx, r) for r in (latest.flow, latest.pump, latest.workload, latest.coordinator)]
+                    reports = [
+                        latest.handoff(ctx, r)
+                        for r in (
+                            latest.flow,
+                            latest.pump,
+                            latest.workload,
+                            latest.coordinator,
+                        )
+                    ]
                 try:
-                    answer = await self.gateway.analyze(ctx, "As the Incident Commander, answer the operator: " + message,
-                        {"evidence": readings if rundown else seed, "team_reports": reports, "as_of_min": ctx.state.t_min,
-                        "previous_messages": [{"role": m["role"], "text": m.get("text", ""), "question": m.get("question")} for m in self.messages[-6:]]},
-                        complex_task=True, activity=self.record_activity,
+                    answer = await self.gateway.analyze(
+                        ctx,
+                        "As the Incident Commander, answer the operator: " + message,
+                        {
+                            "evidence": readings if rundown else seed,
+                            "team_reports": reports,
+                            "as_of_min": ctx.state.t_min,
+                            "previous_messages": [
+                                {
+                                    "role": m["role"],
+                                    "text": m.get("text", ""),
+                                    "question": m.get("question"),
+                                }
+                                for m in self.messages[-6:]
+                            ],
+                        },
+                        complex_task=True,
+                        activity=self.record_activity,
                         evidence_only=rundown,
-                        explain_references=True)
+                        explain_references=True,
+                    )
                 except Exception as exc:
                     source = "DETERMINISTIC"
-                    self.record_activity("Nemotron fallback", str(exc) if isinstance(exc, GatewayError) else "Provider did not return an answer")
+                    self.record_activity(
+                        "Nemotron fallback",
+                        str(exc)
+                        if isinstance(exc, GatewayError)
+                        else "Provider did not return an answer",
+                    )
                     try:
-                        answer = AgentAnswer() if rundown else await self.fallback_chat(ctx, message, target)
+                        answer = (
+                            AgentAnswer()
+                            if rundown
+                            else await self.fallback_chat(ctx, message, target)
+                        )
                     except Exception:
                         answer = AgentAnswer()
                     fact, assessment = operator_read(ctx)
                     answer.evidence_ids = [fact["id"], *answer.evidence_ids][:20]
-                    answer.interpretations = AgentAnswer(interpretations=[{"text": assessment, "evidence_ids": [fact["id"]]}]).interpretations
+                    answer.interpretations = AgentAnswer(
+                        interpretations=[
+                            {"text": assessment, "evidence_ids": [fact["id"]]}
+                        ]
+                    ).interpretations
                 text = "Analysis based on the recorded observation."
                 if handover:
                     text = handoff_text(seed["value"])
-                entry = {"id": uuid4().hex, "role": "agent", "text": text,
-                         "source": source, "t_min": ctx.state.t_min, "run_id": ctx.run_id, **answer.model_dump()}
+                entry = {
+                    "id": uuid4().hex,
+                    "role": "agent",
+                    "text": text,
+                    "source": source,
+                    "t_min": ctx.state.t_min,
+                    "run_id": ctx.run_id,
+                    **answer.model_dump(),
+                }
                 if ctx.run_id != self.session.run_id:
                     return
                 self.messages.append(entry)
@@ -303,10 +502,18 @@ class Agent:
             if run_id == self.session.run_id:
                 fallback = Context(self.session, self.audit)
                 fact, assessment = operator_read(fallback)
-                entry = {"id": uuid4().hex, "run_id": run_id, "role": "agent", "source": "DETERMINISTIC",
-                         "text": handoff_text(fallback.brief), "evidence_ids": [fact["id"]],
-                         "interpretations": [{"text": assessment, "evidence_ids": [fact["id"]]}],
-                         "t_min": fallback.state.t_min}
+                entry = {
+                    "id": uuid4().hex,
+                    "run_id": run_id,
+                    "role": "agent",
+                    "source": "DETERMINISTIC",
+                    "text": handoff_text(fallback.brief),
+                    "evidence_ids": [fact["id"]],
+                    "interpretations": [
+                        {"text": assessment, "evidence_ids": [fact["id"]]}
+                    ],
+                    "t_min": fallback.state.t_min,
+                }
                 self.messages.append(entry)
                 self.messages = self.messages[-40:]
                 self.publish_context(fallback)
@@ -322,24 +529,41 @@ class Agent:
             if target is None and ("treatment" in lower or "heat rejection" in lower):
                 target = next(iter(ctx.topo.treatments), None)
             spec = None
-            if target and ctx.topo.kind(target) == "pump" and any(x in lower for x in ("unavailable", "trip", "fail")):
-                spec = {"type": "PUMP_UNAVAILABLE" if "unavailable" in lower else "PUMP_TRIP", "target": target}
+            if (
+                target
+                and ctx.topo.kind(target) == "pump"
+                and any(x in lower for x in ("unavailable", "trip", "fail"))
+            ):
+                spec = {
+                    "type": "PUMP_UNAVAILABLE"
+                    if "unavailable" in lower
+                    else "PUMP_TRIP",
+                    "target": target,
+                }
             elif target and ctx.topo.kind(target) == "treatment":
                 pct = re.search(r"(\d+(?:\.\d+)?)\s*%", lower)
                 if pct:
                     factor = float(pct[1]) / 100
                     if "by " in lower or "drops " in lower or "reduces " in lower:
                         factor = 1 - factor
-                    spec = {"type": "TREATMENT_CONSTRAINT", "target": target, "params": {"factor": factor}}
+                    spec = {
+                        "type": "TREATMENT_CONSTRAINT",
+                        "target": target,
+                        "params": {"factor": factor},
+                    }
             if spec:
-                await asyncio.to_thread(ctx.execute, "submit_scenario_proposal", {"faults": [spec]})
+                await asyncio.to_thread(
+                    ctx.execute, "submit_scenario_proposal", {"faults": [spec]}
+                )
             else:
                 question = "Which asset and fault should I simulate? For example: CHP-2 unavailable, or heat rejection capacity drops by 50%."
         elif any(x in lower for x in HANDOFF_TERMS):
             if not any(e["source"] == "get_shift_brief" for e in ctx.evidence.values()):
                 await asyncio.to_thread(ctx.execute, "get_shift_brief", {})
         elif "history" in lower or "maintenance" in lower or "repeated" in lower:
-            await asyncio.to_thread(ctx.execute, "get_event_history", {"asset_id": target, "limit": 10})
+            await asyncio.to_thread(
+                ctx.execute, "get_event_history", {"asset_id": target, "limit": 10}
+            )
         else:
             if target:
                 await asyncio.to_thread(ctx.execute, "get_impact", {"asset_id": target})
@@ -360,38 +584,81 @@ class Agent:
             proposal.update(status="REJECTED", reasons=["Operator rejected"])
         else:
             if not self.enabled or not self.session.engine_enabled:
-                raise ValueError("Agent and decision engine must be enabled for approval")
+                raise ValueError(
+                    "Agent and decision engine must be enabled for approval"
+                )
             ctx = Context(self.session, self.audit)
             combo = [ActionSpec.model_validate(a).action() for a in proposal["actions"]]
-            option = await asyncio.to_thread(decision.evaluate_actions, ctx.state, ctx.topo, ctx.cfg, combo)
+            option = await asyncio.to_thread(
+                decision.evaluate_actions, ctx.state, ctx.topo, ctx.cfg, combo
+            )
             if proposal["status"] != "VALIDATED" or ctx.run_id != self.session.run_id:
                 raise ValueError("Proposal already decided or scenario changed")
             if self.session.revision != ctx.revision:
-                raise ValueError("State changed during validation; retry or pause playback before approving")
+                raise ValueError(
+                    "State changed during validation; retry or pause playback before approving"
+                )
             if not option.feasible:
-                proposal.update(status="REJECTED", option=option.model_dump(), reasons=[r.text for r in option.reasons])
+                proposal.update(
+                    status="REJECTED",
+                    option=option.model_dump(),
+                    reasons=[r.text for r in option.reasons],
+                )
                 self.audit.record(self.run_id, "operator_decision", proposal)
                 return proposal
             self.session.commit_verified_actions(combo, option, ctx.revision)
-            proposal.update(status="APPROVED", option=option.model_dump(), approved_event_id=self.session._event_seq,
-                            approved_min=self.session.state.t_min, validation_revision=ctx.revision)
+            proposal.update(
+                status="APPROVED",
+                option=option.model_dump(),
+                approved_event_id=self.session._event_seq,
+                approved_min=self.session.state.t_min,
+                validation_revision=ctx.revision,
+            )
         self.audit.record(self.run_id, "operator_decision", proposal)
-        self.record_activity("Operator approved" if approve else "Operator rejected", identity)
+        self.record_activity(
+            "Operator approved" if approve else "Operator rejected", identity
+        )
         return proposal
 
     def snapshot(self):
         self.reset_run()
         active = [i for i in self.incidents if i["status"] == "active"]
-        waiting = any(i.get("question") for i in active) or bool(self.messages and self.messages[-1].get("question"))
+        waiting = any(i.get("question") for i in active) or bool(
+            self.messages and self.messages[-1].get("question")
+        )
         busy = self.analyzing or bool(self.model_task and not self.model_task.done())
-        status = "Disabled" if not self.enabled else "Analyzing" if busy else "Awaiting operator input" if waiting else "Incident detected" if active else "Monitoring"
-        return {"run_id": self.run_id, "enabled": self.enabled, "status": status,
-                "provider": "Nemotron" if self.gateway.configured else "Deterministic fallback",
-                "model": self.settings.routine_model, "reasoning_model": self.settings.reasoning_model,
-                "provider_error": self.gateway.last_error, "error": self.error, "audit_error": self.audit.error,
-                "last_observation_min": self.last_observation, "incidents": self.incidents, "proposals": self.proposals,
-                "shift_brief": shift_brief(self.session) if self.enabled else None,
-                "team": self.team.snapshot() if self.enabled and self.team else None,
-                "activity": self.activity[-40:], "messages": self.messages, "scenarios": self.scenarios,
-                "hypotheses": self.hypotheses, "evidence": self.evidence,
-                "chat_busy": bool(self.chat_task and not self.chat_task.done())}
+        status = (
+            "Disabled"
+            if not self.enabled
+            else "Analyzing"
+            if busy
+            else "Awaiting operator input"
+            if waiting
+            else "Incident detected"
+            if active
+            else "Monitoring"
+        )
+        return {
+            "run_id": self.run_id,
+            "enabled": self.enabled,
+            "status": status,
+            "provider": "Nemotron"
+            if self.gateway.configured
+            else "Deterministic fallback",
+            "model": self.settings.routine_model,
+            "reasoning_model": self.settings.reasoning_model,
+            "provider_error": self.gateway.last_error,
+            "error": self.error,
+            "audit_error": self.audit.error,
+            "last_observation_min": self.last_observation,
+            "incidents": self.incidents,
+            "proposals": self.proposals,
+            "shift_brief": shift_brief(self.session) if self.enabled else None,
+            "team": self.team.snapshot() if self.enabled and self.team else None,
+            "activity": self.activity[-40:],
+            "messages": self.messages,
+            "scenarios": self.scenarios,
+            "hypotheses": self.hypotheses,
+            "evidence": self.evidence,
+            "chat_busy": bool(self.chat_task and not self.chat_task.done()),
+        }

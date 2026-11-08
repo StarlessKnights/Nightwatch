@@ -1,4 +1,5 @@
 from typing import Any, Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -13,9 +14,14 @@ class ActionSpec(StrictModel):
 
     def action(self):
         from ..actions import Action
+
         if self.kind != "REDUCE_PRODUCTION" and self.pct is not None:
             raise ValueError("Percentage only applies to load reduction")
-        key = {"START_STANDBY_PUMP": "pump", "REDUCE_PRODUCTION": "source", "DISPATCH_TRUCK": "tank"}[self.kind]
+        key = {
+            "START_STANDBY_PUMP": "pump",
+            "REDUCE_PRODUCTION": "source",
+            "DISPATCH_TRUCK": "tank",
+        }[self.kind]
         params = {key: self.target}
         if self.kind == "REDUCE_PRODUCTION":
             if self.pct is None:
@@ -30,7 +36,15 @@ class ActionProposal(StrictModel):
 
 
 class FaultSpec(StrictModel):
-    type: Literal["PUMP_TRIP", "PUMP_DEGRADE", "PUMP_UNAVAILABLE", "PIPELINE_RESTRICTION", "TREATMENT_CONSTRAINT", "INFLOW_SURGE", "LEVEL_SENSOR_FAULT"]
+    type: Literal[
+        "PUMP_TRIP",
+        "PUMP_DEGRADE",
+        "PUMP_UNAVAILABLE",
+        "PIPELINE_RESTRICTION",
+        "TREATMENT_CONSTRAINT",
+        "INFLOW_SURGE",
+        "LEVEL_SENSOR_FAULT",
+    ]
     target: str = Field(min_length=1, max_length=80)
     params: dict[str, Any] = Field(default_factory=dict)
 
@@ -51,7 +65,9 @@ class CitedInterpretation(StrictModel):
 
 class AgentAnswer(StrictModel):
     evidence_ids: list[str] = Field(default_factory=list, max_length=20)
-    interpretations: list[CitedInterpretation] = Field(default_factory=list, max_length=6)
+    interpretations: list[CitedInterpretation] = Field(
+        default_factory=list, max_length=6
+    )
     concerns: list[CitedInterpretation] = Field(default_factory=list, max_length=6)
     question: str | None = Field(default=None, max_length=400)
 
