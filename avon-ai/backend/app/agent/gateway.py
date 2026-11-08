@@ -57,7 +57,7 @@ class Gateway:
     def configured(self):
         return bool(self.settings.api_key.get_secret_value())
 
-    async def request(self, run_id, messages, complex_task=False, final=False):
+    async def request(self, run_id, messages, complex_task=False, final=False, tool_names=None):
         s = self.settings
         model = s.reasoning_model if complex_task else s.routine_model
         body = {"model": model, "messages": messages, "max_tokens": s.max_tokens,
@@ -68,7 +68,7 @@ class Gateway:
         if final:
             body["response_format"] = {"type": "json_object"}
         else:
-            body.update(tools=tool_schemas(), tool_choice="auto")
+            body.update(tools=[t for t in tool_schemas() if tool_names is None or t["function"]["name"] in tool_names], tool_choice="auto")
         self.audit.record(run_id, "llm_request", body)
         started = time.monotonic()
         async with httpx.AsyncClient(timeout=s.timeout_s, transport=self.transport) as client:
@@ -96,7 +96,7 @@ class Gateway:
                     code = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else type(exc).__name__
                     raise GatewayError(f"Nemotron request failed ({code})") from None
 
-    async def analyze(self, ctx, prompt, seed, complex_task=False, activity=None, evidence_only=False, explain_references=False):
+    async def analyze(self, ctx, prompt, seed, complex_task=False, activity=None, evidence_only=False, explain_references=False, tool_names=None):
         if not self.configured:
             raise GatewayError("Set NVIDIA_API_KEY in backend/.env to enable Nemotron; deterministic monitoring remains active")
         if time.monotonic() < self.retry_after:
@@ -112,7 +112,7 @@ class Gateway:
                 repair = False
                 for turn in range(5):
                     final = repair or evidence_only or turn == 4 or calls >= 8
-                    message = await self.request(ctx.run_id, messages, complex_task, final=final)
+                    message = await self.request(ctx.run_id, messages, complex_task, final=final, tool_names=tool_names)
                     tool_calls = message.get("tool_calls") or []
                     if tool_calls:
                         if final or calls + len(tool_calls) > 8:
@@ -125,10 +125,14 @@ class Gateway:
                                 activity("Consulting tool", name)
                             try:
                                 arguments = json.loads(call["function"]["arguments"])
+                                if tool_names is not None and name not in tool_names:
+                                    raise ValueError("Tool outside this specialist's role")
                                 result = await asyncio.to_thread(ctx.execute, name, arguments)
                             except (ValueError, KeyError, TypeError) as exc:
                                 result = {"error": str(exc)[:500]}
                                 self.audit.record(ctx.run_id, "tool_rejected", {"name": name, "error": str(exc)[:500]})
+                            if activity:
+                                activity("Rejected" if isinstance(result, dict) and "error" in result else "Completed", name)
                             messages.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result, default=str)})
                         continue
                     try:

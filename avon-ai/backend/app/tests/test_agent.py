@@ -13,7 +13,7 @@ from app.agent.monitor import observe
 from app.agent.orchestrator import Agent
 from app.agent.settings import Settings
 from app.agent.tools import Context
-from app.agent.team import COORDINATOR, FLOW, PUMP
+from app.agent.team import COORDINATOR, FLOW, PUMP, WORKLOAD, Investigation, SpecialistContext
 from app.session import Session
 
 
@@ -35,17 +35,19 @@ def test_specialists_parallel_then_coordinator_uses_both_reports(agent_setup, pu
     async def handler(request):
         body = json.loads(request.content)
         inputs = json.loads(body["messages"][1]["content"])
-        role = next(role for role in (FLOW, PUMP, COORDINATOR) if inputs["request"].startswith(f"You are the {role}."))
+        role = next(role for role in (FLOW, PUMP, WORKLOAD, COORDINATOR) if inputs["request"].startswith(f"You are the {role}."))
         readings = inputs["observation"]["readings"]
         if role == COORDINATOR:
             assert body["model"] == settings.reasoning_model
-            assert [r["value"]["role"] for r in readings] == [FLOW, PUMP]
-            assert [r["value"]["source"] for r in readings] == ["Nemotron", "Simulator rules" if pump_offline else "Nemotron"]
+            assert [r["value"]["role"] for r in readings] == [FLOW, PUMP, WORKLOAD]
+            assert [r["value"]["source"] for r in readings] == ["Nemotron", "Simulator rules" if pump_offline else "Nemotron", "Nemotron"]
         else:
-            assert body["model"] == settings.routine_model and "tools" not in body
-            assert all(("state.pumps." in r["path"]) == (role == PUMP) for r in readings)
+            assert body["model"] == settings.routine_model
+            assert {t["function"]["name"] for t in body["tools"]} <= {"get_asset_state", "get_impact", "get_workload_plan"}
+            if role != WORKLOAD:
+                assert all(("state.pumps." in r["path"]) == (role == PUMP) for r in readings)
             started.add(role)
-            if len(started) == 2:
+            if len(started) == 3:
                 both_started.set()
             await asyncio.wait_for(both_started.wait(), timeout=3)
             if pump_offline and role == PUMP:
@@ -60,7 +62,8 @@ def test_specialists_parallel_then_coordinator_uses_both_reports(agent_setup, pu
         await agent.analyze_observation(Context(session, agent.audit), groups, signature)
         await agent.model_task
         team = agent.snapshot()["team"]
-        assert [e["status"] for e in team["events"]] == ["Reviewing", "Reviewing", "Delivered", "Delivered", "Reviewing", "Brief ready"]
+        assert [e["status"] for e in team["events"]] == ["Reviewing"] * 3 + ["Delivered"] * 3 + ["Reviewing", "Brief ready"]
+        assert team["reports"][2]["tool_events"][0]["status"] == "Completed"
         assert team["reports"][-1]["source"] == "Nemotron"
         assert not agent.messages and not session.state.pending_actions
         for report in team["reports"]:

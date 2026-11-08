@@ -3,7 +3,7 @@
 .team-view header > span, .team-report small, .team-trigger, .team-node small { color: var(--muted); font-size: 12px; }
 .intelligence .team-trigger { margin: 0; }
 .team-diagram { padding: 12px; border: 1px solid var(--border); background: var(--panel2); border-radius: 10px; }
-.team-specialists { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.team-specialists { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; }
 .team-node { width: 100%; min-width: 0; background: var(--panel); padding: 10px 6px; display: grid; justify-items: center; gap: 4px; align-content: start; }
 .team-node[aria-pressed=true] { background: #203533; border-color: var(--aqua); }
 .team-node small { font-size: 11px; }

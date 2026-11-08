@@ -33,7 +33,7 @@ _REASONS = {"trip": "tripped", "unavailable": "became unavailable", "low_flow": 
 
 REASON_TEXT = {
     "ASSET_UNAVAILABLE": "The asset is unavailable (maintenance or lockout).",
-    "PRECONDITION_FAILED": "A precondition is not met (e.g. already running, already curtailed, no truck free).",
+    "PRECONDITION_FAILED": "A precondition is not met (e.g. already running, already curtailed, no portable chiller available).",
     "LEAD_TIME_EXCEEDS_DEADLINE": "It takes longer to take effect than the time left before HH.",
     "PIPELINE_CAP_EXCEEDED": "The cooling loop is already at its flow cap; extra pump flow would add nothing.",
     "TREATMENT_CAP_EXCEEDED": "Heat rejection is already at capacity; extra pump flow would add nothing.",

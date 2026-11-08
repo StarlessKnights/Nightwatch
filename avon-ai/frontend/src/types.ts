@@ -63,6 +63,7 @@ export interface Option {
 }
 
 export interface Recommendation {
+  run_id: string
   as_of_min: number; headline: string; headline_code: string; status: string
   forecast: Record<string, TankForecast>
   probable_cause: { asset: string; evidence_field: string; value: unknown }[]

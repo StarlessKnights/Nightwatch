@@ -16,6 +16,9 @@ export interface Evidence {
 }
 export interface Interpretation { text: string; evidence_ids: string[] }
 export interface TeamReport {
+  focus_asset_ids: string[]
+  tool_events: { tool: string; status: string; evidence_ids: string[]; origin?: string }[]
+  started_at: number | null; completed_at: number | null
   role: string; model: string; observation: string; evidence_ids: string[]
   status: string; source: string | null; interpretations: Interpretation[]; error: string | null
 }

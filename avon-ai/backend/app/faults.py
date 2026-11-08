@@ -101,8 +101,20 @@ def validate(topo: Topology, type_: str, target: str, params: dict) -> dict:
         raise ValueError(f"unknown fault type {type_}")
     if target not in topo.nodes or topo.kind(target) != spec["target_kind"]:
         raise ValueError(f"{type_} needs a {spec['target_kind']} target")
-    merged = {k: v.get("default") for k, v in spec["params"].items()}
+    rules = spec["params"]
+    if set(params or {}) - rules.keys():
+        raise ValueError("Unknown fault parameters")
+    merged = {k: v.get("default") for k, v in rules.items()}
     merged.update(params or {})
+    for key, rule in rules.items():
+        value = merged[key]
+        if "options" in rule:
+            if value not in rule["options"]:
+                raise ValueError(f"Invalid {key}")
+        elif value is None and rule["default"] is None:
+            continue
+        elif type(value) not in (int, float) or not rule["min"] <= value <= rule["max"]:
+            raise ValueError(f"{key} is outside the supported range")
     return merged
 
 

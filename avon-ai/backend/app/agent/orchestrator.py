@@ -14,7 +14,7 @@ from .incidents import briefing
 from .monitor import observe
 from .proposals import ActionSpec, AgentAnswer
 from .settings import Settings
-from .team import COORDINATOR, FLOW, PUMP, Investigation
+from .team import COORDINATOR, FLOW, PUMP, WORKLOAD, Investigation
 from .tools import Context
 
 
@@ -26,7 +26,7 @@ class Agent:
         self.team = None
         # Isolate cooldowns so a failing specialist does not silence the coordinator or operator chat.
         self.team_gateways = {role: Gateway(self.settings, self.audit, self.gateway.transport)
-                              for role in (FLOW, PUMP, COORDINATOR)}
+                              for role in (FLOW, PUMP, WORKLOAD, COORDINATOR)}
         self.enabled = self.settings.enabled
         self.wake = asyncio.Event()
         self.worker = None
@@ -191,7 +191,14 @@ class Agent:
                 self.audit.record(ctx.run_id, "incident_resolved", old)
         self.incidents = self.incidents[:40]
         trigger = "Condition change · " + ", ".join(r for group in groups for r in group["roots"]) if groups else "Network observation"
-        team = Investigation(ctx, self.settings, trigger, bool(groups))
+        # Investigate the most urgent cluster; retain the other incidents in the desk.
+        priority = {"critical": 3, "warning": 2, "watch": 1, "normal": 0}
+        primary = max(new, key=lambda item: priority.get(item["severity"], 0), default=None)
+        scope = primary["affected_assets"] if primary else None
+        if primary:
+            trigger = "Investigating · " + ", ".join(primary["roots"])
+        team = Investigation(ctx, self.settings, trigger, bool(groups), scope)
+        team.incident_id = primary["id"] if primary else None
         self.team = team
         self.publish_context(ctx)
         for item in new:
@@ -215,12 +222,13 @@ class Agent:
         if not current():
             return
         report = team.coordinator
-        if len(incidents) == 1 and report.source == "Nemotron":
-            incidents[0].update(source="NEMOTRON", interpretations=report.interpretations)
-            self.audit.record(ctx.run_id, "incident", incidents[0])
+        primary = next((i for i in incidents if i["id"] == team.incident_id), None)
+        if primary and report.source == "Nemotron":
+            primary.update(source="NEMOTRON", interpretations=report.interpretations)
+            self.audit.record(ctx.run_id, "incident", primary)
         self.publish_context(ctx)
         self.audit.record(ctx.run_id, "investigation", team.snapshot())
-        self.record_activity("Coordinator brief ready", team.trigger)
+        self.record_activity("Incident Commander brief ready", team.trigger)
 
     def submit_chat(self, message):
         if not self.enabled:
@@ -260,9 +268,9 @@ class Agent:
                 reports = []
                 if latest and latest.run_id == ctx.run_id and latest.coordinator.status == "Brief ready":
                     # Copy the dated specialist reports into this chat's citation scope.
-                    reports = [latest.handoff(ctx, r) for r in (latest.flow, latest.pump, latest.coordinator)]
+                    reports = [latest.handoff(ctx, r) for r in (latest.flow, latest.pump, latest.workload, latest.coordinator)]
                 try:
-                    answer = await self.gateway.analyze(ctx, "As the Coordinator, answer the operator: " + message,
+                    answer = await self.gateway.analyze(ctx, "As the Incident Commander, answer the operator: " + message,
                         {"evidence": readings if rundown else seed, "team_reports": reports, "as_of_min": ctx.state.t_min,
                         "previous_messages": [{"role": m["role"], "text": m.get("text", ""), "question": m.get("question")} for m in self.messages[-6:]]},
                         complex_task=True, activity=self.record_activity,

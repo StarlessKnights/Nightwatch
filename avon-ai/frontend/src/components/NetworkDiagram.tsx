@@ -3,12 +3,26 @@ import { Background, Handle, Position, ReactFlow, type Edge, type Node, type Nod
 import '@xyflow/react/dist/style.css'
 import { api } from '../api'
 import type { Envelope, Network } from '../types'
+import type { AgentState, TeamReport } from '../agentTypes'
+import { eventText } from '../format'
+import './investigation.css'
 
 const COL_W = 230
 const ROW_H = 120
 const FLOW_EPS = 0.5 // kW below which an edge is drawn as "no flow"
 
-type D = { node: any; env: Envelope; network: Network; dim: boolean; onDetails?: (id: string) => void }
+type D = { node: any; env: Envelope; network: Network; dim: boolean; onDetails?: (id: string) => void; report?: TeamReport; selected?: boolean; select?: () => void }
+
+const agentNames: Record<string, string> = { 'Thermal Capacity Agent': 'Thermal capacity', 'Cooling Reliability Agent': 'Cooling reliability', 'Workload Placement Agent': 'Workload placement', 'Incident Commander': 'Incident commander' }
+function InvestigationNode({ data }: NodeProps<Node<D>>) {
+  const report = data.report!
+  return <button className={`investigation-node nodrag ${report.status === 'Reviewing' ? 'is-reviewing' : ''}`} aria-pressed={data.selected} onClick={data.select}>
+    <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+    <span className="agent-orbit" aria-hidden="true"><i /></span>
+    <span><strong>{agentNames[report.role] ?? report.role}</strong><small>{report.source === 'Simulator rules' ? 'Simulator rules' : report.status}</small></span>
+    <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
+  </button>
+}
 
 const H = () => (
   <>
@@ -109,7 +123,7 @@ function TreatNode({ data }: NodeProps<Node<D>>) {
   )
 }
 
-const nodeTypes = { source: SourceNode, tank: TankNode, pump: PumpNode, pipeline: PipeNode, treatment: TreatNode }
+const nodeTypes = { source: SourceNode, tank: TankNode, pump: PumpNode, pipeline: PipeNode, treatment: TreatNode, investigator: InvestigationNode }
 
 function edgeFlow(env: Envelope, from: string, to: string, fromKind: string): number {
   const s = env.state
@@ -120,7 +134,12 @@ function edgeFlow(env: Envelope, from: string, to: string, fromKind: string): nu
   return 0
 }
 
-export function NetworkDiagram({ env, network, onPumpDetail, incidentAssets = [] }: { env: Envelope; network: Network; onPumpDetail: (id: string) => void; incidentAssets?: string[] }) {
+export function NetworkDiagram({ env, network, onPumpDetail, incidentAssets = [], intelligence }: { env: Envelope; network: Network; onPumpDetail: (id: string) => void; incidentAssets?: string[]; intelligence?: AgentState | null }) {
+  const [showAgents, setShowAgents] = useState(true)
+  const [selectedRole, setSelectedRole] = useState<string | null>(null)
+  const team = intelligence?.enabled ? intelligence.team : null
+  const reports = showAgents ? team?.reports ?? [] : []
+  const selectedReport = reports.find(r => r.role === selectedRole)
   // React Flow clears handle bounds when controlled nodes lose `measured`.
   // Carry dimensions across telemetry updates so edges are not unmounted.
   const [dimensions, setDimensions] = useState<Record<string, { width: number; height: number }>>({})
@@ -140,6 +159,10 @@ export function NetworkDiagram({ env, network, onPumpDetail, incidentAssets = []
   const container = useRef<HTMLDivElement>(null)
   const refit = useRef<() => void>(() => {})
   useEffect(() => {
+    const timer = window.setTimeout(() => refit.current(), 160)
+    return () => window.clearTimeout(timer)
+  }, [reports.length])
+  useEffect(() => {
     let timer: number
     const observer = new ResizeObserver(([entry]) => {
       window.clearTimeout(timer)
@@ -151,7 +174,7 @@ export function NetworkDiagram({ env, network, onPumpDetail, incidentAssets = []
   const [focus, setFocus] = useState<{ id: string; related: Set<string> } | null>(null)
 
   const kinds = useMemo(() => Object.fromEntries(network.topology.nodes.map((n) => [n.id, n.type])), [network])
-  const inFocus = (id: string) => !focus || focus.id === id || focus.related.has(id)
+  const inFocus = (id: string) => selectedReport ? selectedReport.focus_asset_ids.includes(id) : !focus || focus.id === id || focus.related.has(id)
 
   const nodes: Node<D>[] = network.topology.nodes.map((n) => ({
     id: n.id, type: n.type, draggable: false, measured: dimensions[n.id],
@@ -174,18 +197,46 @@ export function NetworkDiagram({ env, network, onPumpDetail, incidentAssets = []
     }
   })
 
+  reports.forEach((report, index) => {
+    const id = `agent:${report.role}`
+    const working = report.status === 'Reviewing'
+    nodes.push({ id, type: 'investigator', position: { x: index * 290, y: -145 }, draggable: false,
+      measured: dimensions[id], data: { node: {}, env, network, dim: false, report, selected: selectedRole === report.role,
+        select: () => { setSelectedRole(selectedRole === report.role ? null : report.role); setFocus(null) } } })
+    if (index < reports.length - 1) edges.push({ id: `${id}:handoff`, source: id, target: `agent:${reports.at(-1)!.role}`,
+      type: 'smoothstep', className: `investigation-link handoff ${working ? 'is-working' : ''}`,
+      style: { stroke: 'var(--agent-line)', strokeWidth: 1, opacity: report.status === 'Delivered' ? .65 : .2 } })
+    if (working || selectedRole === report.role) report.focus_asset_ids.forEach(asset => {
+      if (!network.topology.nodes.some(n => n.id === asset)) return
+      edges.push({ id: `${id}:${asset}`, source: id, target: asset, type: 'smoothstep',
+        className: `investigation-link ${working ? 'is-working' : ''}`,
+        style: { stroke: 'var(--agent-line)', strokeWidth: 1, opacity: working ? .5 : .3 } })
+    })
+  })
+
   const onClick = (_: unknown, n: Node) => {
+    if (n.type === 'investigator') return
+    setSelectedRole(null)
     if (focus?.id === n.id) return setFocus(null)
     api.impact(n.id).then((r) => setFocus({ id: n.id, related: new Set([...r.upstream, ...r.downstream]) }))
   }
 
   return (
-    <div ref={container} style={{ height: '100%', width: '100%' }}><ReactFlow nodes={nodes} onNodesChange={onNodesChange} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.1 }}
+    <div ref={container} className="investigation-canvas" style={{ height: '100%', width: '100%' }}>
+      <div className="investigation-toolbar"><button aria-pressed={showAgents} onClick={() => { setShowAgents(!showAgents); setSelectedRole(null) }}>Agent layer <span>{showAgents ? 'On' : 'Off'}</span></button>{team && showAgents && <span>Observed T+{team.t_min} min{env.state.t_min > team.t_min ? ' · Earlier snapshot' : ''}</span>}</div>
+      <ReactFlow nodes={nodes} onNodesChange={onNodesChange} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.15 }}
       onInit={view => { refit.current = () => { void view.fitView({padding: 0.1}) } }}
-      nodesConnectable={false} proOptions={{ hideAttribution: true }} onNodeClick={onClick} onPaneClick={() => setFocus(null)}
+      nodesConnectable={false} proOptions={{ hideAttribution: true }} onNodeClick={onClick} onPaneClick={() => { setFocus(null); setSelectedRole(null) }}
       minZoom={0.3} colorMode="dark" zoomOnDoubleClick={false}
       onNodeDoubleClick={(_, n) => { if (n.type === 'pump') onPumpDetail(n.id) }}>
       <Background gap={24} />
-    </ReactFlow></div>
+    </ReactFlow>
+    {selectedReport && <section className="graph-agent-report" aria-label={`${selectedReport.role} graph findings`}>
+      <header><strong>{selectedReport.role}</strong><button aria-label="Close agent findings" onClick={() => setSelectedRole(null)}>×</button></header>
+      <small>{selectedReport.source ?? selectedReport.status} · T+{team!.t_min} min</small>
+      <p>{selectedReport.interpretations[0]?.text ?? selectedReport.observation ?? 'Awaiting specialist handoffs.'}</p>
+      <details><summary>Tool calls · {selectedReport.tool_events.length}</summary>{selectedReport.tool_events.map((event, i) => <div className="graph-tool" key={i}><code>{event.tool}</code><span>{event.status}</span>{event.origin && <small>{event.origin}</small>}{event.evidence_ids.map(id => intelligence?.evidence[id] && <span key={id}>{eventText(intelligence.evidence[id].label)}</span>)}</div>)}</details>
+    </section>}
+    </div>
   )
 }

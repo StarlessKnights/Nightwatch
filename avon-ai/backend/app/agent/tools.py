@@ -12,6 +12,7 @@ from .handoff import shift_brief
 
 
 TOOL_MODELS = {
+    "get_workload_plan": EmptyArgs,
     "get_shift_brief": EmptyArgs,
     "get_network_state": EmptyArgs, "get_asset_state": AssetArgs, "get_forecast": EmptyArgs,
     "get_impact": AssetArgs, "get_recommendations": EmptyArgs, "get_event_history": HistoryArgs,
@@ -20,6 +21,7 @@ TOOL_MODELS = {
     "submit_scenario_proposal": ScenarioProposal,
 }
 DESCRIPTIONS = {
+    "get_workload_plan": "Compare validated workload relief and cooling options. No destination capacity or job SLAs are modeled.",
     "get_shift_brief": "For handovers or questions about changes, read measured hall thermal trends, recent events, unacknowledged alarms and the next forecast high-high crossing.",
     "get_network_state": "Read the cooling network graph and current asset conditions. Transfer edges are not simulated routes.",
     "get_asset_state": "Read current values for one asset.",
@@ -42,19 +44,6 @@ def tool_schemas():
 
 def validate_fault(spec, state, topo):
     params = faults.validate(topo, spec.type, spec.target, spec.params)
-    catalog = faults.FAULT_CATALOG[spec.type]["params"]
-    if set(spec.params) - set(catalog):
-        raise ValueError("Unknown fault parameters")
-    for key, rule in catalog.items():
-        value = params[key]
-        if "options" in rule:
-            if value not in rule["options"]:
-                raise ValueError(f"Invalid {key}")
-        elif value is not None:
-            if type(value) not in (int, float) or not rule["min"] <= value <= rule["max"]:
-                raise ValueError(f"{key} is outside the supported range")
-        elif rule.get("default") is not None:
-            raise ValueError(f"{key} is required")
     if spec.type == "LEVEL_SENSOR_FAULT":
         if params["transmitter"] not in state.tanks[spec.target].level_sensors:
             raise ValueError("Transmitter does not exist")
@@ -78,10 +67,10 @@ class Context:
         self.audit = audit
         self.evidence, self.proposals, self.scenarios, self.hypotheses = {}, [], [], []
         self._rec = None
-        self._prefix = uuid4().hex[:12]
 
     def fact(self, source, path, value, label=None):
-        identity = f"{self._prefix}-{len(self.evidence) + 1}"
+        # Several specialist tools can create evidence on worker threads at once.
+        identity = uuid4().hex
         row = {"id": identity, "run_id": self.run_id, "revision": self.revision,
                "t_min": self.state.t_min, "source": source, "path": path,
                "label": label or path, "value": copy.deepcopy(value)}
@@ -126,7 +115,20 @@ class Context:
             raise ValueError("Tool not allowed")
         args = TOOL_MODELS[name].model_validate(arguments)
         self.audit.record(self.run_id, "tool_call", {"name": name, "arguments": args.model_dump(), "revision": self.revision})
-        if name == "get_shift_brief":
+        if name == "get_workload_plan":
+            rec = self.recommendation()
+            options = [self.option_summary(o) for o in rec.options]
+            relief = [o for o in options if "REDUCE_PRODUCTION" in o["action_id"]]
+            viable = [o for o in relief if o["feasible"]]
+            result = self.fact(name, "workload.plan", {
+                "summary": ("Validated workload-relief options are available; compare service cost and thermal margin with cooling responses. "
+                            if viable else "No feasible workload-relief option is available in the current deterministic ranking. ")
+                           + "Destination headroom, job priority and SLA constraints require operator confirmation.",
+                "workload_options": relief,
+                "cooling_options": [o for o in options if "REDUCE_PRODUCTION" not in o["action_id"]],
+                "destination_capacity_modeled": False, "sla_modeled": False,
+            }, "Workload and cooling comparison")
+        elif name == "get_shift_brief":
             result = self.fact(name, "shift.brief", self.brief, "Shift handoff")
         elif name == "get_network_state":
             result = {"graph": {"nodes": [{"id": n, "type": v["type"]} for n, v in self.topo.nodes.items()],

@@ -39,7 +39,7 @@ export function ScenarioCompare({ scenario: s }: { scenario: ScenarioResult }) {
   return <div className="comparison">
     <span className="eyebrow">ISOLATED FORECAST · T+{s.t_min}</span>
     <h4>{s.faults.map(f => f.target + ' · ' + f.type.toLowerCase().replaceAll('_', ' ') + (typeof f.params.factor === 'number' ? ' (' + n(100 * f.params.factor) + '% capacity)' : '')).join(' + ')}</h4>
-    <table><caption>Time to high-high · {s.horizon_min}-minute horizon</caption><thead><tr><th>Tank</th><th>As observed</th><th>With fault</th></tr></thead><tbody>{Object.entries(s.forecast).map(([tank, f]) => <tr key={tank}><th>{tank}</th><td>{toHH(s.baseline.forecast[tank].time_to_HH)}</td><td>{toHH(f.time_to_HH)}</td></tr>)}</tbody></table>
+    <table><caption>Time to high-high · {s.horizon_min}-minute horizon</caption><thead><tr><th>Hall / storage</th><th>As observed</th><th>With fault</th></tr></thead><tbody>{Object.entries(s.forecast).map(([tank, f]) => <tr key={tank}><th>{tank}</th><td>{toHH(s.baseline.forecast[tank].time_to_HH)}</td><td>{toHH(f.time_to_HH)}</td></tr>)}</tbody></table>
     <p>Do-nothing cost: {money(s.baseline.do_nothing_cost)} → <b>{money(s.do_nothing_cost)}</b></p>
     <p className="hint">{diff === 0 ? 'No change in modeled cost.' : money(Math.abs(diff)) + (diff > 0 ? ' higher' : ' lower') + ' with the hypothetical fault.'}</p>
   </div>
@@ -57,7 +57,7 @@ export function WhatIfLab({ data, run, openEvidence }: { data: AgentState; run: 
   const latest = data.scenarios.at(-1)
   return <div className="lab"><span className="eyebrow">WHAT-IF LAB</span><h4>Compare a disruption</h4><p className="hint">See how a fault changes hall limits and cost. Playback is unaffected.</p>
       <form onSubmit={async e => { e.preventDefault(); setRunning(true); try { await run('/scenarios', { faults: [choice === 'standby' ? { type: 'PUMP_UNAVAILABLE', target: 'CHP-2' } : { type: 'TREATMENT_CONSTRAINT', target: 'HRJ-1', params: { factor: 0.5 } }] }) } finally { setRunning(false) } }}>
-      <select aria-label="Hypothetical disruption" value={choice} onChange={e => setChoice(e.target.value)}><option value="standby">CHP-2 standby unavailable</option><option value="treatment">Treatment at half capacity</option></select>
+      <select aria-label="Hypothetical disruption" value={choice} onChange={e => setChoice(e.target.value)}><option value="standby">CHP-2 standby unavailable</option><option value="treatment">Heat rejection at 50% capacity</option></select>
       <button disabled={running || !data.enabled}>{running ? 'Comparing…' : 'Compare'}</button></form>
       {latest && <><ScenarioCompare scenario={latest} /><button className="link-inline" onClick={() => openEvidence(latest.evidence_ids[0])}>View recorded comparison ↗</button></>}
     </div>
