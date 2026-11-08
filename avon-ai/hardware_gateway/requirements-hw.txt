@@ -1,7 +1,0 @@
-# AVON AI Hardware Gateway & Tools Dependencies
-# Install with: pip install -r requirements-hw.txt
-
-pyserial>=3.5
-websockets>=12.0
-requests>=2.31.0
-colorama>=0.4.6
