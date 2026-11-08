@@ -4,19 +4,19 @@ AVON AI - Computer Hardware Gateway Bridge (3-Pump Active / 5-Pump Ready)
 Connects to the AVON AI simulation backend via WebSocket (/ws/sim)
 and streams real-time telemetry to physical Arduino UNO R4s acting as pumps.
 
-Pump Allocation (Unified Contract with Hardware Firmware):
-  Device 1: Pump P-201 (Duty Pump on Tank T-101 -> PL-2)
-  Device 2: Pump P-203 (Duty Pump on Tank T-104 -> PL-1)
-  Device 3: Pump P-204 (Standby Pump on Tank T-104 -> PL-1)
-  (Future) Device 4: Pump P-SRC1 (Wellhead Inflow 1 -> T-104)
-  (Future) Device 5: Pump P-SRC2 (Wellhead Inflow 2 -> T-101)
-
-State Rules:
-  - Trip: Error occurred within pump -> State 4 (TRIPPED, caution triangle)
-  - Wear: Slider 0..1; if wear < 0.5 -> State 3 (DEGRADED, alternating caution triangle / waves)
-  - Unavailable: Operator shut down / lockout -> State 5 (UNAVAILABLE, solid 'X')
-  - Running: Healthy -> State 1 (RUNNING, smooth water waves)
-  - Starting: Auto-changeover warmup -> State 2 (STARTING)
+Key Architectural Guarantees:
+  1. Continuous 10 Hz Telemetry Stream:
+     Sends packets at 10 Hz (every 100 ms) so the Arduino firmware's 1.5s
+     watchdog (LINK_TIMEOUT_MS) never expires, even when the sim is paused.
+  2. Multi-Port Auto-Discovery & Broadcast:
+     Automatically discovers Arduino serial ports (e.g. COM4, COM5, COM6)
+     and broadcasts packets for Device 1 (P-201), Device 2 (P-203), and
+     Device 3 (P-204). Each Arduino's firmware self-filters by its configured
+     DEVICE_ID and ASSIGNED_PUMP, eliminating port-mapping mismatches.
+  3. Physical Fault Tolerance:
+     Isolated non-blocking writes per port. If any Arduino is unplugged,
+     the remaining boards continue updating at full speed with 0 lag.
+     Disconnected ports auto-reconnect every 3 seconds.
 """
 
 from __future__ import annotations
@@ -54,21 +54,17 @@ logger = logging.getLogger("AvonGateway")
 
 
 @dataclass
-class PumpChannel:
-    dev_id: int
-    pump_id: str
-    name: str
-    port_path: str
+class SerialPortLink:
+    port: str
     ser: Optional[Any] = None
     is_online: bool = False
     last_reconnect_attempt: float = 0.0
-    reconnect_cooldown_s: float = 3.0
     packets_sent: int = 0
     errors_caught: int = 0
 
 
-class FaultTolerantPumpManager:
-    """Manages independent serial links for active pump nodes."""
+class FaultTolerantSerialBus:
+    """Manages independent, hot-pluggable serial links across all Arduino boards."""
 
     def __init__(self, cfg: dict, dry_run: bool = False):
         self.cfg = cfg
@@ -79,30 +75,35 @@ class FaultTolerantPumpManager:
         self.cooldown = s_cfg.get("reconnect_cooldown_s", 3.0)
         self.auto_detect = s_cfg.get("auto_detect", True)
         self.active_devices: List[int] = s_cfg.get("active_devices", [1, 2, 3])
-        self.channels: Dict[int, PumpChannel] = {}
-        self._init_channels()
+        self.links: Dict[str, SerialPortLink] = {}
+        self._init_links()
 
-    def _init_channels(self) -> None:
+    def _init_links(self) -> None:
+        configured_ports = []
         is_windows = platform.system() == "Windows"
         port_dict = (
             self.cfg.get("serial", {}).get("windows_ports", {})
             if is_windows
             else self.cfg.get("serial", {}).get("linux_ports", {})
         )
-        pumps_cfg = self.cfg.get("pumps", {})
-        for i in self.active_devices:
-            p_info = pumps_cfg.get(f"device{i}", {})
-            pid = p_info.get("id", f"P-{i}")
-            pname = p_info.get("name", f"Pump {i}")
-            default_path = f"COM{i+2}" if is_windows else f"/dev/ttyACM{i-1}"
-            path = port_dict.get(f"device{i}", default_path)
-            self.channels[i] = PumpChannel(
-                dev_id=i,
-                pump_id=pid,
-                name=pname,
-                port_path=path,
-                reconnect_cooldown_s=self.cooldown
-            )
+        for dev_key in [f"device{i}" for i in self.active_devices]:
+            p = port_dict.get(dev_key)
+            if p and p not in configured_ports:
+                configured_ports.append(p)
+
+        # Auto-detect real connected serial ports
+        if HAS_SERIAL:
+            try:
+                for p_info in serial.tools.list_ports.comports():
+                    p_name = p_info.device
+                    # Include known Arduino ports or USB serial
+                    if p_name not in configured_ports:
+                        configured_ports.append(p_name)
+            except Exception as e:
+                logger.debug(f"Port scan exception: {e}")
+
+        for p in configured_ports:
+            self.links[p] = SerialPortLink(port=p)
 
     def connect_all(self) -> None:
         if self.dry_run:
@@ -110,116 +111,102 @@ class FaultTolerantPumpManager:
             return
 
         if not HAS_SERIAL:
-            logger.warning("pyserial is not installed. Switching to dry-run mode.")
+            logger.warning("pyserial is not installed! Run: pip install pyserial. Switching to dry-run mode.")
             self.dry_run = True
             return
 
-        if self.auto_detect:
-            self._attempt_auto_detect()
+        logger.info(f"Probing and connecting Arduino serial ports: {list(self.links.keys())}...")
+        for port, link in self.links.items():
+            self._try_connect(link)
 
-        logger.info(f"Connecting to physical Arduino serial ports ({len(self.active_devices)} active pumps)...")
-        for dev_id, ch in self.channels.items():
-            self._try_connect(ch)
-
-    def _attempt_auto_detect(self) -> None:
-        """Attempts to auto-detect Arduino boards and match device IDs from HELLO line."""
+    def _try_connect(self, link: SerialPortLink) -> bool:
+        link.last_reconnect_attempt = time.monotonic()
         try:
-            available_ports = [p.device for p in serial.tools.list_ports.comports()]
-            if not available_ports:
-                return
-
-            logger.info(f"Detected host serial ports: {available_ports}")
-            # If ports count matches active devices and user hasn't explicitly overridden
-            assigned_ports = set()
-            for dev_id, ch in self.channels.items():
-                if ch.port_path in available_ports and ch.port_path not in assigned_ports:
-                    assigned_ports.add(ch.port_path)
-                else:
-                    # Pick next available port not yet assigned
-                    for p in available_ports:
-                        if p not in assigned_ports:
-                            ch.port_path = p
-                            assigned_ports.add(p)
-                            break
-        except Exception as e:
-            logger.debug(f"Auto-detect scan skipped: {e}")
-
-    def _try_connect(self, ch: PumpChannel) -> bool:
-        ch.last_reconnect_attempt = time.monotonic()
-        try:
-            ser = serial.Serial(ch.port_path, self.baud, timeout=self.timeout)
-            ch.ser = ser
-            ch.is_online = True
-            logger.info(f"[ONLINE] Device {ch.dev_id} ({ch.name}) connected on {ch.port_path}.")
+            ser = serial.Serial(link.port, self.baud, timeout=self.timeout)
+            link.ser = ser
+            link.is_online = True
+            logger.info(f"[ONLINE] Arduino connected on {link.port} at {self.baud} baud.")
             return True
-        except Exception:
-            ch.ser = None
-            ch.is_online = False
+        except Exception as e:
+            link.ser = None
+            link.is_online = False
             return False
 
-    def send_packet(self, dev_id: int, payload: dict) -> None:
-        ch = self.channels.get(dev_id)
-        if not ch:
+    def scan_for_new_ports(self) -> None:
+        """Periodically scans for newly inserted USB serial devices."""
+        if not HAS_SERIAL or self.dry_run:
             return
+        try:
+            for p_info in serial.tools.list_ports.comports():
+                p_name = p_info.device
+                if p_name not in self.links:
+                    logger.info(f"[DISCOVERY] New USB serial device detected: {p_name}")
+                    link = SerialPortLink(port=p_name)
+                    self.links[p_name] = link
+                    self._try_connect(link)
+        except Exception:
+            pass
 
+    def broadcast_packet(self, payload: dict) -> None:
+        """Transmits a single NDJSON packet to all connected Arduinos with per-port fault isolation."""
         line = json.dumps(payload, separators=(',', ':')) + "\n"
+        encoded = line.encode("utf-8")
         now = time.monotonic()
 
         if self.dry_run:
-            logger.debug(f"[MOCK TX -> Dev {dev_id} ({ch.pump_id})]: {line.strip()}")
+            logger.debug(f"[MOCK TX]: {line.strip()}")
             return
 
-        # Attempt reconnect if offline and cooldown passed
-        if not ch.is_online or ch.ser is None or not ch.ser.is_open:
-            if now - ch.last_reconnect_attempt >= ch.reconnect_cooldown_s:
-                if not self._try_connect(ch):
-                    return
-            else:
-                return
+        # Attempt reconnect on offline ports
+        for port, link in self.links.items():
+            if not link.is_online or link.ser is None:
+                if now - link.last_reconnect_attempt >= self.cooldown:
+                    self._try_connect(link)
 
-        # Isolated write: failure on one port never affects other pumps
-        try:
-            ch.ser.write(line.encode("utf-8"))
-            ch.ser.flush()
-            ch.packets_sent += 1
-        except Exception as e:
-            ch.errors_caught += 1
-            ch.is_online = False
-            logger.warning(
-                f"[FAULT TOLERANCE] Device {dev_id} ({ch.name}) on {ch.port_path} disconnected: {e}. "
-                f"Remaining pumps continue running smoothly. Will retry in {ch.reconnect_cooldown_s:.1f}s."
-            )
-            try:
-                ch.ser.close()
-            except Exception:
-                pass
-            ch.ser = None
-            ch.last_reconnect_attempt = now
+        # Isolated transmission
+        for port, link in list(self.links.items()):
+            if link.is_online and link.ser:
+                try:
+                    link.ser.write(encoded)
+                    link.ser.flush()
+                    link.packets_sent += 1
+                except Exception as e:
+                    link.is_online = False
+                    link.errors_caught += 1
+                    link.last_reconnect_attempt = now
+                    logger.warning(
+                        f"[FAULT TOLERANCE] Arduino on {port} disconnected: {e}. "
+                        f"Other boards continue running smoothly. Auto-retry in {self.cooldown:.1f}s."
+                    )
+                    try:
+                        link.ser.close()
+                    except Exception:
+                        pass
+                    link.ser = None
 
     def get_health_summary(self) -> str:
         if self.dry_run:
             return "[SIMULATED / DRY-RUN]"
         tokens = []
         now = time.monotonic()
-        for i in self.active_devices:
-            ch = self.channels[i]
-            if ch.is_online:
-                tokens.append(f"{ch.pump_id}:ON")
+        for port, link in self.links.items():
+            if link.is_online:
+                tokens.append(f"{port}:ON")
             else:
-                retry_in = max(0.0, ch.reconnect_cooldown_s - (now - ch.last_reconnect_attempt))
-                tokens.append(f"{ch.pump_id}:OFF({retry_in:.0f}s)")
+                retry_in = max(0.0, self.cooldown - (now - link.last_reconnect_attempt))
+                tokens.append(f"{port}:OFF({retry_in:.0f}s)")
         return " ".join(tokens)
 
     def close_all(self) -> None:
-        for dev_id, ch in self.channels.items():
-            if ch.ser and ch.ser.is_open:
+        for port, link in self.links.items():
+            if link.ser and link.ser.is_open:
                 try:
-                    ch.ser.close()
+                    link.ser.close()
                 except Exception:
                     pass
-                ch.ser = None
-                ch.is_online = False
-        logger.info("All pump serial links closed.")
+                link.ser = None
+                link.is_online = False
+        logger.info("All Arduino serial links closed.")
 
 
 class PumpStateExtractor:
@@ -296,8 +283,6 @@ class PumpStateExtractor:
         elif st_code == 3:
             al = 1  # Advisory on wear < 0.5
 
-        # Format includes all keys required by both Person B's firmware
-        # ("pump", "state", "w", "available", "lvl", "cap") and Person A's firmware.
         return {
             "v": 1,
             "seq": self._next_seq(),
@@ -316,50 +301,6 @@ class PumpStateExtractor:
             "il": 0
         }
 
-    def extract_inflow_pump(self, dev_id: int, source_id: str, feeds_tank: str, state: dict) -> dict:
-        """Extracts telemetry packet for a wellhead inflow pump (SRC-1, SRC-2)."""
-        sources = state.get("sources", {})
-        tanks = state.get("tanks", {})
-        src = sources.get(source_id, {})
-        t = tanks.get(feeds_tank, {})
-
-        is_shut_in = src.get("shut_in", False) or t.get("interlock", {}).get("tripped", False)
-        rate = src.get("flow", 0.0) if not is_shut_in else 0.0
-        curtail_pct = src.get("curtailment_pct", 0.0)
-        lvl = int(round(t.get("volume", 600)))
-        cap = int(round(t.get("capacity", 1000)))
-
-        if is_shut_in:
-            st_code = 4  # Tripped by HH interlock
-            al = 3
-        elif curtail_pct > 5.0:
-            st_code = 3  # Degraded / curtailed
-            al = 1
-        elif rate > 0.0:
-            st_code = 1  # Running
-            al = 0
-        else:
-            st_code = 0  # Stopped
-            al = 0
-
-        return {
-            "v": 1,
-            "seq": self._next_seq(),
-            "dev": dev_id,
-            "pump": f"P-{source_id}",
-            "state": st_code,
-            "w": 1000 if not curtail_pct else int(round((1.0 - curtail_pct / 100.0) * 1000)),
-            "available": 0 if is_shut_in else 1,
-            "lvl": lvl,
-            "cap": cap,
-            "flow": int(round(rate)),
-            "max": int(src.get("rate", 180)),
-            "rf": int(round((1.0 - curtail_pct / 100.0) * 1000)),
-            "lim": 0,
-            "al": al,
-            "il": 1 if is_shut_in else 0
-        }
-
 
 async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = False) -> None:
     if verbose:
@@ -375,82 +316,114 @@ async def run_gateway(config_path: str, dry_run: bool = False, verbose: bool = F
     ws_url = cfg.get("backend", {}).get("ws_url", "ws://127.0.0.1:8080/ws/sim")
     reconnect_delay = cfg.get("backend", {}).get("reconnect_interval_s", 2.0)
 
-    pump_mgr = FaultTolerantPumpManager(cfg, dry_run=dry_run)
-    pump_mgr.connect_all()
+    bus = FaultTolerantSerialBus(cfg, dry_run=dry_run)
+    bus.connect_all()
 
     extractor = PumpStateExtractor(cfg)
+    active_devs = bus.active_devices
 
-    active_devs = pump_mgr.active_devices
-    logger.info(f"Starting AVON AI Hardware Bridge ({len(active_devs)} active pumps: {active_devs})...")
-    logger.info(f"Target WebSocket: {ws_url}")
+    # Shared telemetry state updated by WebSocket listener and streamed at 10 Hz
+    current_state: Dict[str, Any] = {
+        "pumps": {
+            "P-201": {"run_state": "RUNNING", "health": 1.0, "flow": 150.0, "available": True},
+            "P-203": {"run_state": "RUNNING", "health": 1.0, "flow": 180.0, "available": True},
+            "P-204": {"run_state": "STOPPED", "health": 1.0, "flow": 0.0, "available": True}
+        },
+        "tanks": {
+            "T-101": {"volume": 600, "capacity": 1000},
+            "T-104": {"volume": 880, "capacity": 1000}
+        },
+        "t_min": 0
+    }
 
-    while True:
-        try:
-            if not HAS_WEBSOCKETS:
-                logger.error("'websockets' library required. Install with: pip install websockets")
-                await asyncio.sleep(5)
-                continue
+    stop_event = asyncio.Event()
 
-            async with websockets.connect(ws_url) as ws:
-                logger.info(f"Connected to AVON AI sim at {ws_url}")
-                last_log_time = time.monotonic()
+    async def tx_stream_task():
+        """Continuous 10 Hz telemetry loop ensuring Arduino watchdogs never expire."""
+        logger.info("Continuous 10 Hz hardware transmission stream started.")
+        last_log = time.monotonic()
+        last_scan = time.monotonic()
 
-                async for raw_msg in ws:
-                    try:
-                        data = json.loads(raw_msg)
-                        state = data.get("state", {})
-                        if not state:
-                            continue
+        while not stop_event.is_set():
+            now = time.monotonic()
 
-                        # Extract & send according to unified pump allocation:
-                        # Device 1 -> P-201 (Duty Tank T-101)
-                        # Device 2 -> P-203 (Duty Tank T-104)
-                        # Device 3 -> P-204 (Standby Tank T-104)
-                        if 1 in active_devs:
-                            p1 = extractor.extract_pump(1, "P-201", state)
-                            pump_mgr.send_packet(1, p1)
-                        if 2 in active_devs:
-                            p2 = extractor.extract_pump(2, "P-203", state)
-                            pump_mgr.send_packet(2, p2)
-                        if 3 in active_devs:
-                            p3 = extractor.extract_pump(3, "P-204", state)
-                            pump_mgr.send_packet(3, p3)
-                        if 4 in active_devs:
-                            p4 = extractor.extract_inflow_pump(4, "SRC-1", "T-104", state)
-                            pump_mgr.send_packet(4, p4)
-                        if 5 in active_devs:
-                            p5 = extractor.extract_inflow_pump(5, "SRC-2", "T-101", state)
-                            pump_mgr.send_packet(5, p5)
+            # Rescan for new USB devices every 3 seconds
+            if now - last_scan >= 3.0:
+                bus.scan_for_new_ports()
+                last_scan = now
 
-                        now = time.monotonic()
-                        if now - last_log_time >= 2.0:
-                            health = pump_mgr.get_health_summary()
-                            pumps = state.get("pumps", {})
-                            p201 = pumps.get("P-201", {})
-                            p203 = pumps.get("P-203", {})
-                            p204 = pumps.get("P-204", {})
-                            logger.info(
-                                f"Tick t={state.get('t_min')}m | "
-                                f"P-201(D1): {p201.get('flow', 0)} bbl/hr (w={p201.get('health', 1):.2f}) | "
-                                f"P-203(D2): {p203.get('flow', 0)} bbl/hr (w={p203.get('health', 1):.2f}) | "
-                                f"P-204(D3): {p204.get('run_state')} | "
-                                f"Pumps: [{health}]"
-                            )
-                            last_log_time = now
+            # Broadcast packets for each active device
+            if 1 in active_devs:
+                p1 = extractor.extract_pump(1, "P-201", current_state)
+                bus.broadcast_packet(p1)
+            if 2 in active_devs:
+                p2 = extractor.extract_pump(2, "P-203", current_state)
+                bus.broadcast_packet(p2)
+            if 3 in active_devs:
+                p3 = extractor.extract_pump(3, "P-204", current_state)
+                bus.broadcast_packet(p3)
 
-                    except json.JSONDecodeError:
-                        pass
-                    except Exception as e:
-                        logger.error(f"Error handling tick: {e}")
+            # Log status ticker every 2 seconds
+            if now - last_log >= 2.0:
+                health = bus.get_health_summary()
+                pumps = current_state.get("pumps", {})
+                p201 = pumps.get("P-201", {})
+                p203 = pumps.get("P-203", {})
+                p204 = pumps.get("P-204", {})
+                w201 = p201.get("eff_health", p201.get("health", 1.0))
+                w203 = p203.get("eff_health", p203.get("health", 1.0))
+                logger.info(
+                    f"Tick t={current_state.get('t_min', 0)}m | "
+                    f"P-201(D1): {p201.get('flow', 0):.0f} bbl/hr (w={w201:.2f}) | "
+                    f"P-203(D2): {p203.get('flow', 0):.0f} bbl/hr (w={w203:.2f}) | "
+                    f"P-204(D3): {p204.get('run_state', 'STOPPED')} | "
+                    f"Links: [{health}]"
+                )
+                last_log = now
 
-        except (asyncio.CancelledError, KeyboardInterrupt):
-            logger.info("Shutdown signal received.")
-            break
-        except Exception as e:
-            logger.warning(f"WebSocket disconnected: {e}. Retrying in {reconnect_delay}s...")
-            await asyncio.sleep(reconnect_delay)
+            # Stream at 10 Hz (100 ms interval)
+            await asyncio.sleep(0.1)
 
-    pump_mgr.close_all()
+    async def ws_rx_task():
+        """WebSocket receiver keeping current_state synchronized with the FastAPI simulation."""
+        while not stop_event.is_set():
+            try:
+                if not HAS_WEBSOCKETS:
+                    logger.error("'websockets' library required. Run: pip install websockets")
+                    await asyncio.sleep(5)
+                    continue
+
+                async with websockets.connect(ws_url) as ws:
+                    logger.info(f"Connected to AVON AI sim backend at {ws_url}")
+                    async for raw_msg in ws:
+                        try:
+                            data = json.loads(raw_msg)
+                            state = data.get("state", {})
+                            if state:
+                                current_state.update(state)
+                        except json.JSONDecodeError:
+                            pass
+                        except Exception as e:
+                            logger.error(f"WebSocket parse error: {e}")
+
+            except (asyncio.CancelledError, KeyboardInterrupt):
+                break
+            except Exception as e:
+                logger.warning(f"Backend connection at {ws_url} lost: {e}. Reconnecting in {reconnect_delay}s...")
+                await asyncio.sleep(reconnect_delay)
+
+    tx_handle = asyncio.create_task(tx_stream_task())
+    rx_handle = asyncio.create_task(ws_rx_task())
+
+    try:
+        await asyncio.gather(tx_handle, rx_handle)
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        logger.info("Shutdown signal received.")
+    finally:
+        stop_event.set()
+        tx_handle.cancel()
+        rx_handle.cancel()
+        bus.close_all()
 
 
 def main():

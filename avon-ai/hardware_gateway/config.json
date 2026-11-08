@@ -11,11 +11,11 @@
     "auto_detect": true,
     "active_devices": [1, 2, 3],
     "windows_ports": {
-      "device1": "COM3",
-      "device2": "COM4",
-      "device3": "COM5",
-      "device4": "COM6",
-      "device5": "COM7"
+      "device1": "COM4",
+      "device2": "COM5",
+      "device3": "COM6",
+      "device4": "COM7",
+      "device5": "COM8"
     },
     "linux_ports": {
       "device1": "/dev/ttyACM0",
