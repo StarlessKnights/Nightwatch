@@ -45,6 +45,23 @@ This skill provides hardened patterns and diagnostics for bridging real-time sof
   - Set a backoff cooldown (e.g., 3.0s) before attempting to reconnect.
   - Never allow one port failure to block or delay writes to other active boards.
 
+### E. Single Peripheral Multiplexing & Priority Telemetry Dispatch
+* **Rotary Encoder Multiplexing**: When physical I/O controls fewer units than exist in the plant, use push-button encoder cycling (`modulinoKnob.isPressed()`) to cycle active channels (`P-1 -> P-2 -> P-3`). Store state in a local channel array (`pumpKnobPos[4]`) so channel switches preserve individual settings. Provide multi-sensory feedback (LED matrix overlay, buzzer chime, RGB pixels).
+* **Button Edge Detection**: For safety/trip buttons (`ModulinoButtons`), sample at 20 Hz, detect rising edges (`btn && !lastBtn`), and trigger immediate transmission (`due = true`) instead of waiting for periodic heartbeats.
+
+### F. Multi-Board Identity Collisions
+* If an Arduino displays its watchdog timeout diagnostic (`...`), check the gateway logs for duplicate identity collisions (`Links: [COM4:D2 COM5:D2 COM6:OFF]`).
+* Remedy by flashing explicit environments to target ports:
+  ```powershell
+  pio run -d avon-ai/hardware -e uno_r4_pump1 -t upload --upload-port COM6
+  pio run -d avon-ai/hardware -e uno_r4_pump2 -t upload --upload-port COM5
+  pio run -d avon-ai/hardware -e uno_r4_pump3 -t upload --upload-port COM4
+  ```
+
+### G. Standby Pump Reconnection Safeguards
+* When microcontrollers reconnect, restore `available = True` and `hardware_online = True`.
+* NEVER auto-start standby/backup pumps into `RUNNING`; they must remain `STOPPED` until called by auto-changeover or operator command.
+
 ---
 
 ## 2. Diagnostic & Probing Toolchain
